@@ -29,3 +29,6 @@ Thumbs.db
 *.log
 .npm/
 .cache/
+
+# e-Paper is a separate clone; parent repo tracks sources only
+e-Paper/.git/
