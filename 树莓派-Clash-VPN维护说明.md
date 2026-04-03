@@ -1,8 +1,5 @@
 # 树莓派 Clash（Mihomo）VPN 维护说明
 
-本文记录树莓派上 **Mihomo（Clash.Meta）+ Yacd** 的部署要点，便于后续维护与排障。**订阅链接、节点账号等敏感信息只应保存在树莓派 `/etc/clash/config.yaml` 或机场控制台，请勿把完整订阅 URL 提交到公开仓库。**
-
----
 
 ## 1. 架构一览
 
@@ -121,34 +118,3 @@ clash -v
    - `external-ui: /etc/clash/ui/yacd`
    - `tun:` 整段（若继续使用 TUN 开关）
 3. 执行 `sudo clash -t -d /etc/clash`，通过后 `sudo systemctl restart clash`。
-
-（若使用自动化脚本合并，需保证订阅里 `MATCH` 等规则无 YAML 语法问题，例如 **`MATCH,策略组` 逗号后不要多余空格**；合并后勿覆盖 **`geoip.metadb` / `geosite.dat`**，除非你有意更新 Geo 数据。）
-
----
-
-## 8. 网络与下载说明（备忘）
-
-树莓派直连 GitHub 可能极慢或失败；实际部署时曾采用 **在 Windows 等本机经镜像站下载 + `scp` 传到树莓派** 的方式安装 **Mihomo 二进制** 与 **Yacd**。**Geo** 可使用 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) 发布的 **`geoip.metadb`**、**`geosite.dat`**，经镜像加速后保存到 **`/etc/clash/`**，避免首次加载 `GEOIP`/`GEOSITE` 规则时在线下载超时。
-
----
-
-## 9. 排障提示
-
-- **服务起不来：** `sudo journalctl -u clash -xe`、`sudo clash -t -d /etc/clash`。
-- **规则含 `GEOIP` 报错：** 检查 `/etc/clash/geoip.metadb` 是否存在、大小是否正常（异常小或 0 字节多为下载中断）。
-- **`external-ui` 路径报错：** 使用 **`-d /etc/clash`** 时，**`external-ui` 须落在该目录允许路径下**；当前为 **`/etc/clash/ui/yacd`**（勿随意改到 `/root/...` 等，否则 `-t` 可能报 SAFE_PATHS）。
-- **开 TUN 后 SSH 异常：** 优先 **`sudo clash-tun off`**；仍有问题时检查 `route-exclude-address` 是否需增加你的网段，或暂时将 **`strict-route`** 改为 `false` 后再观察（需理解可能增加泄漏面）。
-- **「全局」但部分 HTTPS 失败：** 属规则/SNI/线路差异常见现象；可用 **`curl -v`**、面板连接日志与 **`http://www.gstatic.com/generate_204`** 等与 **`https://`** 对照排查。
-
----
-
-## 10. 与本仓库 / 本机协作
-
-- 从 **Windows** 管理树莓派：若已配置 SSH 别名（如 `my_pi`），可 `ssh my_pi` 执行上述命令。
-- 本文档仅描述**约定与路径**；**真实订阅 URL、节点密码**请以树莓派上实际 `config.yaml` 与机场控制台为准。
-
----
-
-*文档目的：沉淀 VPN 关键信息，便于后续维护与使用。*
-
-*校对说明：已与树莓派上实际 `clash.service`、`/usr/local/bin/{mihomo,clash}`、`/etc/clash/ui/yacd`、`geoip.metadb` / `geosite.dat` 及 `clash-tun` 行为对照修订；若你日后升级内核或改路径，请同步更新本文。*

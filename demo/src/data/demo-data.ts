@@ -83,7 +83,7 @@ export const INITIAL_UNITS: Unit[] = [
     refreshMode: "interval",
     intervalSeconds: 300,
     lastStatus: { ok: true, text: "成功 · 1.2s" },
-    previewImageUrl: "https://picsum.photos/seed/mypi-frame-u1/1440/1080",
+    previewImageUrl: "/shunde-city-sounds.png",
   },
   {
     id: "u2",

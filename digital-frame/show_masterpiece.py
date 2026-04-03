@@ -48,6 +48,18 @@ def _portrait_cover(im, w: int, h: int):
     return ImageOps.cover(im, (w, h))
 
 
+def _portrait_contain_on_white(im, w: int, h: int):
+    """完整图可见、不足处留白（适合带底部文字的拼图 / 海报）。"""
+    from PIL import Image, ImageOps
+
+    fitted = ImageOps.contain(im, (w, h), method=Image.Resampling.LANCZOS)
+    out = Image.new("RGB", (w, h), (255, 255, 255))
+    x = (w - fitted.width) // 2
+    y = (h - fitted.height) // 2
+    out.paste(fitted, (x, y))
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description="名画显示到 13.3 E6 墨水屏（竖屏）")
     parser.add_argument(
@@ -72,6 +84,11 @@ def main():
         action="store_true",
         help="刷屏前先全屏 Clear 一次（多一轮刷新）",
     )
+    parser.add_argument(
+        "--contain",
+        action="store_true",
+        help="按长边适配画布并居中留白（不裁切）；默认铺满裁切 (cover)",
+    )
     args = parser.parse_args()
 
     if not os.path.isdir(_LIB):
@@ -83,7 +100,11 @@ def main():
 
     print("加载图像…", args.url[:80], "…" if len(args.url) > 80 else "")
     rgb = _load_rgb(args.url, use_cache=not args.no_cache)
-    frame = _portrait_cover(rgb, _W, _H)
+    frame = (
+        _portrait_contain_on_white(rgb, _W, _H)
+        if args.contain
+        else _portrait_cover(rgb, _W, _H)
+    )
     if frame.size != (_W, _H):
         frame = frame.resize((_W, _H), Image.Resampling.LANCZOS)
 

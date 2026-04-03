@@ -34,7 +34,7 @@ export const INKYPI_IMAGE_DEFAULTS: InkypiImageSettings = {
 }
 
 export const DEFAULT_FRAME_CONFIG: FrameDisplayConfig = {
-  orientation: "landscape",
+  orientation: "portrait",
   imageSettings: { ...INKYPI_IMAGE_DEFAULTS },
 }
 
