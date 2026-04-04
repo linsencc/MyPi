@@ -32,3 +32,6 @@ Thumbs.db
 
 # e-Paper is a separate clone; parent repo tracks sources only
 e-Paper/.git/
+
+# Renamed to server/; ignore stray empty pi-server/ if it reappears locally
+pi-server/
