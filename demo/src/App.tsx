@@ -391,12 +391,14 @@ export default function App() {
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              variant="outline"
-              className="h-11 gap-2 rounded-full border-slate-200 bg-white px-5 shadow-sm"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-full text-slate-600 transition-[color,background-color,transform] hover:bg-slate-200/55 hover:text-slate-800 active:scale-[0.96] focus-visible:ring-slate-400/45 [&_svg]:!h-5 [&_svg]:!w-5"
               onClick={openFrameDialog}
+              aria-label="画框设置"
+              title="画框设置"
             >
-              <Settings2 className="h-4 w-4 text-slate-600" strokeWidth={1.75} />
-              画框设置
+              <Settings2 strokeWidth={1.5} aria-hidden />
             </Button>
           </div>
         </header>
@@ -407,31 +409,39 @@ export default function App() {
           </h2>
           {nowOnWall ? (
             <>
-              <div
-                className={cn(
-                  "flex justify-center rounded-[1.8rem] px-4 py-5 sm:px-6 sm:py-7",
-                  "bg-gradient-to-b from-slate-200/45 via-slate-100/25 to-transparent",
-                  previewFrame.orientation === "portrait" &&
-                    "from-slate-300/40 via-slate-800/[0.07] to-transparent"
-                )}
-              >
+              <div className="relative overflow-hidden rounded-[length:var(--radius-surface)]">
+                {/* 网格渐变 + 基色，略增层次 */}
+                <div
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute inset-0",
+                    previewFrame.orientation === "portrait"
+                      ? "bg-[radial-gradient(ellipse_95%_72%_at_14%_0%,rgb(148_163_184/0.22),transparent_55%),radial-gradient(ellipse_65%_50%_at_88%_12%,rgb(100_116_139/0.12),transparent_48%),radial-gradient(ellipse_50%_42%_at_48%_96%,rgb(71_85_105/0.08),transparent_52%),linear-gradient(to_bottom,rgb(203_213_225/0.38),rgb(148_163_184/0.09),transparent)]"
+                      : "bg-[radial-gradient(ellipse_100%_78%_at_18%_0%,rgb(148_163_184/0.16),transparent_52%),radial-gradient(ellipse_72%_58%_at_90%_20%,rgb(148_163_184/0.1),transparent_46%),radial-gradient(ellipse_52%_44%_at_42%_98%,rgb(100_116_139/0.07),transparent_50%),linear-gradient(to_bottom,rgb(226_232_240/0.42),rgb(241_245_249/0.2),transparent)]"
+                  )}
+                />
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 bg-hero-noise opacity-[0.035] mix-blend-multiply [background-size:256px_256px]"
+                />
+                <div className="relative z-10 flex justify-center px-4 py-5 sm:px-6 sm:py-7">
                 <div className="flex w-full max-w-[min(100%,980px)] justify-center">
                   {previewFrame.orientation === "landscape" ? (
                     <div
                       className={cn(
-                        "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[1.35rem] bg-slate-900/[0.04]",
+                        "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-900/[0.04]",
                         "shadow-[0_0_0_1px_rgb(15_23_42/0.05),0_26px_70px_-40px_rgb(15_23_42/0.16)] ring-1 ring-slate-900/[0.055]"
                       )}
                     >
-                      {/* 物理画框：哑光金属外框 + 高光边 + 内阴影嵌入感 */}
-                      <div className="absolute inset-0 p-1">
+                      {/* 物理画框：细 bezel + 内阴影（电子墨水 / 相框嵌入感） */}
+                      <div className="absolute inset-0 p-[3px]">
                         <div
                           className={cn(
-                            "relative h-full w-full rounded-[12px] bg-[#1f232b]",
-                            "shadow-[inset_0_1px_0_rgb(255_255_255/0.12),inset_0_0_0_1px_rgb(255_255_255/0.08)]"
+                            "relative h-full w-full rounded-[10px] bg-[linear-gradient(160deg,rgb(100_116_139)_0%,rgb(71_85_105)_48%,rgb(100_116_139)_100%)]",
+                            "shadow-[inset_0_2px_3px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.18),inset_0_0_0_1px_rgb(255_255_255/0.12),inset_0_-2px_3px_rgb(0_0_0/0.08)]"
                           )}
                         >
-                          <div className="absolute inset-1 overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgb(0_0_0/0.28),inset_0_8px_18px_rgb(0_0_0/0.2)]">
+                          <div className="absolute inset-[3px] overflow-hidden rounded-[7px] bg-slate-800 shadow-[inset_0_0_0_1px_rgb(0_0_0/0.15),inset_0_6px_14px_rgb(0_0_0/0.12),inset_0_1px_0_rgb(255_255_255/0.06)]">
                             <PreviewFrame
                               src={previewSrc(nowOnWall)}
                               alt={`${nowOnWall.name} 当前画面预览`}
@@ -444,19 +454,19 @@ export default function App() {
                   ) : (
                     <div
                       className={cn(
-                        "relative aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[1.35rem] bg-black sm:h-[min(44vh,360px)]",
-                        "shadow-[0_0_0_1px_rgb(255_255_255/0.06),0_32px_80px_-36px_rgb(0_0_0/0.45)] ring-1 ring-white/12"
+                        "relative aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800 sm:h-[min(44vh,360px)]",
+                        "shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_32px_80px_-36px_rgb(0_0_0/0.38)] ring-1 ring-white/14"
                       )}
                     >
-                      {/* 物理画框：哑光金属外框 + 高光边 + 内阴影嵌入感 */}
-                      <div className="absolute inset-0 p-1">
+                      {/* 物理画框：细 bezel + 内阴影（电子墨水 / 相框嵌入感） */}
+                      <div className="absolute inset-0 p-[3px]">
                         <div
                           className={cn(
-                            "relative h-full w-full rounded-[12px] bg-[#1f232b]",
-                            "shadow-[inset_0_1px_0_rgb(255_255_255/0.12),inset_0_0_0_1px_rgb(255_255_255/0.08)]"
+                            "relative h-full w-full rounded-[10px] bg-[linear-gradient(165deg,rgb(100_116_139)_0%,rgb(71_85_105)_50%,rgb(100_116_139)_100%)]",
+                            "shadow-[inset_0_2px_3px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.18),inset_0_0_0_1px_rgb(255_255_255/0.12),inset_0_-2px_3px_rgb(0_0_0/0.08)]"
                           )}
                         >
-                          <div className="absolute inset-1 overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgb(0_0_0/0.28),inset_0_8px_18px_rgb(0_0_0/0.2)]">
+                          <div className="absolute inset-[3px] overflow-hidden rounded-[7px] bg-slate-800 shadow-[inset_0_0_0_1px_rgb(0_0_0/0.15),inset_0_6px_14px_rgb(0_0_0/0.12),inset_0_1px_0_rgb(255_255_255/0.06)]">
                             <PreviewFrame
                               src={previewSrc(nowOnWall)}
                               alt={`${nowOnWall.name} 当前画面预览`}
@@ -468,10 +478,11 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                </div>
               </div>
             </>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-6 py-14 text-center">
+            <div className="rounded-[length:var(--radius-surface)] border border-dashed border-slate-200/90 bg-slate-50/60 px-6 py-14 text-center">
               <p className="text-[15px] font-semibold text-slate-800">暂无画框展示内容</p>
               <p className="mx-auto mt-1.5 max-w-sm text-[12px] leading-relaxed text-slate-500">
                 启用至少一个绘画节点后，将在此显示预览。
@@ -497,7 +508,7 @@ export default function App() {
                 <li
                   key={u.id}
                   className={cn(
-                    "group flex aspect-square min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-900/[0.055] bg-white/95 shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_14px_36px_-22px_rgb(15_23_42/0.12),0_6px_14px_-10px_rgb(15_23_42/0.05)] backdrop-blur-[2px]",
+                    "group flex aspect-square min-h-0 min-w-0 flex-col overflow-hidden rounded-[length:var(--radius-surface)] border border-slate-900/[0.055] bg-white/95 shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_14px_36px_-22px_rgb(15_23_42/0.12),0_6px_14px_-10px_rgb(15_23_42/0.05)] backdrop-blur-[2px]",
                     disabled && "opacity-[0.72]"
                   )}
                 >
@@ -519,12 +530,12 @@ export default function App() {
                       </h3>
                     </div>
 
-                    <div className="flex shrink-0 items-center justify-end gap-1">
+                    <div className="flex shrink-0 items-center justify-end gap-3 pt-0.5">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0 rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                        className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
                         disabled={rowLocked}
                         title="立即执行渲染并优先上墙"
                         aria-label={`立即渲染「${u.name}」`}
@@ -536,7 +547,7 @@ export default function App() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0 rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                        className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
                         disabled={rowLocked}
                         title="编辑间隔或定时刷新"
                         aria-label={`编辑渲染时间「${u.name}」`}
