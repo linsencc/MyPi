@@ -2,7 +2,7 @@
   "name": "mypi-web",
   "private": true,
   "version": "0.0.1",
-  "description": "MyPi 正式控制台：对接 pi-server /api/v1。开发：先起 pi-server:5050，再 npm run dev。",
+  "description": "MyPi 正式控制台：对接 server /api/v1。开发：先在 server 目录启动后端（5050），再 npm run dev。",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,4 +1,4 @@
-"""Smoke verification for pi-server API (Flask test_client). Run from pi-server: PYTHONPATH=. python verify_demo.py"""
+"""Smoke verification for MyPi API (Flask test_client). Run from server: PYTHONPATH=. python verify_demo.py"""
 from __future__ import annotations
 
 import json

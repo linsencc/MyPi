@@ -23,7 +23,7 @@ type NodeCardRow = { template: TemplateMeta; scene: Scene }
 const PLACEHOLDER = PREVIEW_PLACEHOLDER_SRC
 const ROW_COOLDOWN_MS = 650
 
-/** http(s) 或同源相对路径（经 Vite 代理到 pi-server 的 /api/...） */
+/** http(s) 或同源相对路径（经 Vite 代理到后端的 /api/...） */
 function isUsableImageRef(s: string | null | undefined): boolean {
   if (!s?.trim()) return false
   const t = s.trim()
@@ -72,7 +72,7 @@ export function useWallSession() {
       setWallState(ws)
       setWallRuns(runs)
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "加载失败，请确认 pi-server 已启动（端口 5050）"
+      const msg = e instanceof ApiError ? e.message : "加载失败，请确认后端已启动（端口 5050）"
       setLoadError(msg)
       showToast(msg)
     } finally {
@@ -99,7 +99,7 @@ export function useWallSession() {
         setWallRuns(runs)
       } catch (e) {
         if (cancelled) return
-        const msg = e instanceof ApiError ? e.message : "加载失败，请确认 pi-server 已启动（端口 5050）"
+        const msg = e instanceof ApiError ? e.message : "加载失败，请确认后端已启动（端口 5050）"
         setLoadError(msg)
       } finally {
         if (!cancelled) setLoading(false)

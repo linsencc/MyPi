@@ -3,7 +3,7 @@ name: mypi-browser-verify
 description: >-
   Requires end-to-end verification of MyPi web and wall flows in Cursor’s
   built-in browser (cursor-ide-browser MCP). Use for any change touching web/,
-  pi-server APIs consumed by the web app, preview/on-wall UX, or when the user
+  MyPi backend (server/) APIs consumed by the web app, preview/on-wall UX, or when the user
   asks for verification, sign-off, or “交付” of UI-related work. Forbids
   declaring work complete from CLI/tests alone when user-visible behavior is in scope.
 ---
@@ -18,14 +18,14 @@ description: >-
 ## 何时必须启用本流程
 
 - 修改了 `web/`（含路由、代理、预览、上墙、时间轴、对话框等）。
-- 修改了 `pi-server/` 中影响 Web 的接口或编排（如 `wall/state`、`show-now`、预览图 URL、`/api/v1/output/` 等）。
+- 修改了 `server/` 中影响 Web 的接口或编排（如 `wall/state`、`show-now`、预览图 URL、`/api/v1/output/` 等）。
 - 用户要求验收、演示、联调或「交付」且与上述相关。
 
 纯后端内部逻辑、与浏览器无关的脚本：仍应用 `verify_demo.py` / 单测等；**若该次任务同时影响 Web，浏览器验证仍不可省略**。
 
 ## 验证前准备
 
-- 在终端启动 **`pi-server`**（如 `PYTHONPATH=. python _dev_serve.py` 或单进程、**避免** `FLASK_DEBUG` 父子双进程导致 `wall/state` 不一致）与 **`web` 的 Vite dev**（默认 `http://127.0.0.1:5173`，`/api` 代理到 5050）。
+- 在终端于 **`server/`** 启动后端（如 `PYTHONPATH=. python _dev_serve.py` 或单进程、**避免** `FLASK_DEBUG` 父子双进程导致 `wall/state` 不一致）与 **`web` 的 Vite dev**（默认 `http://127.0.0.1:5173`，`/api` 代理到 5050）。
 - 调用 MCP 工具前：**先读对应工具的 schema**（项目 `mcps/cursor-ide-browser/tools/*.json`），再按参数调用。
 
 ## 内置浏览器操作顺序（遵守 MCP 说明）

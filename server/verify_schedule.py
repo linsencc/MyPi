@@ -1,6 +1,6 @@
 """Time / schedule logic checks (next_fire_time, wall/state.upcoming shape).
 
-Run from pi-server: PYTHONPATH=. python verify_schedule.py
+Run from server: PYTHONPATH=. python verify_schedule.py
 """
 from __future__ import annotations
 

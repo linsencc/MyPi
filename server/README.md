@@ -1,6 +1,6 @@
 # Pi 后端（Flask + APScheduler）
 
-开发：在 `pi-server` 目录下
+开发：在 `server` 目录下
 
 ```powershell
 $env:PYTHONPATH = (Get-Location).Path

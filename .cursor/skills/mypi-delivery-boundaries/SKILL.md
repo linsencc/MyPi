@@ -22,7 +22,7 @@ description: >-
 ## 硬性规则
 
 - **禁止**：为口头「验一下 case」或临时验收而**新增**面向最终用户的组件、路由、菜单或常驻文案（除非用户**明确**要求该能力作为产品功能）。
-- **允许**：运行仓库内已有脚本（如 `pi-server/verify_demo.py`、`verify_acceptance.py`、`verify_schedule.py`）；在浏览器 **DevTools → Network** 中查看已有请求的 **Response**（如 `GET .../wall/state`）；用**已有**对话框/页面做点击与取消等操作验证。
+- **允许**：运行仓库内已有脚本（如 `server/verify_demo.py`、`verify_acceptance.py`、`verify_schedule.py`）；在浏览器 **DevTools → Network** 中查看已有请求的 **Response**（如 `GET .../wall/state`）；用**已有**对话框/页面做点击与取消等操作验证。
 - **若确实需要把调度信息展示给用户**：单独当作**产品需求**讨论与实现，不得在 issue/PR 里写成「为了 TC/UT 能通过」。
 
 ## 验证方式优先级（不污染 `web/`）
@@ -38,4 +38,4 @@ description: >-
 
 ## 开发环境（避免误判）
 
-- **单进程**提供 `pi-server`（避免双监听 5050 导致 `wall/state` 不一致）；遵循仓库内对 `_dev_serve.py` / `threaded` 的说明。环境不稳时**先修环境**，不要加页面来「对齐状态」。
+- **单进程**提供后端（在 `server/`，避免双监听 5050 导致 `wall/state` 不一致）；遵循仓库内对 `_dev_serve.py` / `threaded` 的说明。环境不稳时**先修环境**，不要加页面来「对齐状态」。

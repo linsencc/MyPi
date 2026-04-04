@@ -60,7 +60,7 @@ export default function App() {
       <AppProviders>
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="max-w-md text-[15px] text-slate-700">
-            {loadError ?? "无法加载配置，请确认 pi-server 已在 5050 端口运行。"}
+            {loadError ?? "无法加载配置，请确认后端已在 5050 端口运行。"}
           </p>
           <Button type="button" onClick={() => void refresh()}>
             重试
