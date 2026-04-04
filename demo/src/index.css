@@ -122,10 +122,47 @@
     position: relative;
     z-index: 1;
   }
+  /* 全站图片不可拖成「另存/拖出」幽灵图（配合 img draggable=false） */
+  img {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
 }
 
-/* 画框设置：自定义 range，圆角轨 + 已填进度色 + 拇指样式（减轻原生 accent 与布局抖动） */
+/* 时间轴：隐藏滚动条，保留滚轮 / 触摸 / 拖动 */
 @layer components {
+  .timeline-scroll-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .timeline-scroll-hide::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* 视口上下线性渐隐：内容滚入/滚出时削弱硬切边 */
+  .timeline-viewport-mask {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 0.85rem,
+      black calc(100% - 0.85rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 0.85rem,
+      black calc(100% - 0.85rem),
+      transparent 100%
+    );
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+  }
+
   .ink-range-slider {
     /* 已填：主题蓝；未填：略深的灰，保证与白底分界可辨 */
     --ink-fill: #0071e3;

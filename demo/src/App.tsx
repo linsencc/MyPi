@@ -127,6 +127,7 @@ function PreviewFrame({
     <img
       src={src}
       alt={alt}
+      draggable={false}
       className="absolute inset-0 h-full w-full object-cover object-center"
       style={{ filter: imageFilter }}
       loading="eager"
@@ -352,10 +353,8 @@ export default function App() {
           [u.id]: [log, ...(prev[u.id] ?? [])],
         }))
         setPreviewBust((b) => ({ ...b, [u.id]: Date.now() }))
-        setUnits((prev) => {
-          const idx = prev.findIndex((x) => x.id === u.id)
-          if (idx < 0) return prev
-          const enabled = prev.map((x) =>
+        setUnits((prev) =>
+          prev.map((x) =>
             x.id === u.id
               ? {
                   ...x,
@@ -365,12 +364,7 @@ export default function App() {
                 }
               : x
           )
-          const j = enabled.findIndex((x) => x.id === u.id)
-          if (j < 0) return prev
-          const next = [...enabled]
-          const [item] = next.splice(j, 1)
-          return [item, ...next]
-        })
+        )
         showToast(`「${u.name}」已上墙并完成渲染（演示）`)
       })
     },

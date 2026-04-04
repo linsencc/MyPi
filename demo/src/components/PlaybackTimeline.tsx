@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 
 import { type RunLog, type Unit } from "@/data/demo-data"
 import { cn } from "@/lib/utils"
@@ -91,7 +91,7 @@ function dotClass(kind: DotKind, ok: boolean): string {
   )
 }
 
-const MAX_EVENTS = 6
+const MAX_EVENTS = 80
 
 /** 单行最小高度，6 行固定视区避免条数从少变多时整体高度跳动 */
 const TIMELINE_ROW_MIN_H = "min-h-[2.625rem]"
@@ -102,8 +102,8 @@ const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
 
 /** 对称时间轴：左时间 + 中轴（圆点）+ 右内容 */
 const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
-/** 与网格中缝对齐，用于视口底部轴线淡出层 */
-const TIMELINE_AXIS_CENTER_LEFT = "calc(1rem + 8rem + 0.625rem)" as const
+/** 与中间列圆点对齐：左列 8rem + 中列一半 0.625rem（相对已含 pl-4 的内容区，勿再加 1rem） */
+const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
 
 export function PlaybackTimeline({
   units,
@@ -155,6 +155,69 @@ export function PlaybackTimeline({
 
   const showEmptyHistory = rows.length === 0
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [overflowY, setOverflowY] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || showEmptyHistory) {
+      setOverflowY(false)
+      return
+    }
+    const measure = () => setOverflowY(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [rows, showEmptyHistory])
+
+  const dragRef = useRef<{
+    pointerId: number | null
+    startY: number
+    startScroll: number
+    dragging: boolean
+  }>({ pointerId: null, startY: 0, startScroll: 0, dragging: false })
+
+  const onPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!overflowY || e.button !== 0) return
+    if (e.pointerType === "touch") return
+    const el = scrollRef.current
+    if (!el) return
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      startScroll: el.scrollTop,
+      dragging: false,
+    }
+    try {
+      el.setPointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }, [overflowY])
+
+  const onPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (d.pointerId !== e.pointerId || !scrollRef.current) return
+    const dy = e.clientY - d.startY
+    if (!d.dragging && Math.abs(dy) > 6) d.dragging = true
+    if (d.dragging) {
+      e.preventDefault()
+      scrollRef.current.scrollTop = d.startScroll - dy
+    }
+  }, [])
+
+  const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (d.pointerId !== e.pointerId) return
+    try {
+      scrollRef.current?.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    dragRef.current = { pointerId: null, startY: 0, startScroll: 0, dragging: false }
+  }, [])
+
   const playingRowIndex = useMemo(() => {
     if (!playingAnchor) return -1
     return rows.findIndex((r) => r.key === playingAnchor.key)
@@ -193,9 +256,11 @@ export function PlaybackTimeline({
         <h2 id="playback-timeline-heading" className="text-lg font-semibold tracking-tight text-slate-900">
           时间轴
         </h2>
-        <p className="py-6 text-center text-[13px] leading-relaxed text-slate-500">
-          暂无记录。启用节点并渲染后会显示在这里。
-        </p>
+        <div className="select-none">
+          <p className="py-6 text-center text-[13px] leading-relaxed text-slate-500">
+            暂无记录。启用节点并渲染后会显示在这里。
+          </p>
+        </div>
       </section>
     )
   }
@@ -206,11 +271,11 @@ export function PlaybackTimeline({
         时间轴
       </h2>
 
-      <div className="relative">
+      <div className="relative select-none">
         {showEmptyHistory ? (
           <div
             className={cn(
-              "relative flex items-center justify-center overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]",
+              "relative flex items-center justify-center overscroll-y-contain pb-2 pl-4 pr-3 pt-5",
               TIMELINE_VIEWPORT_H
             )}
           >
@@ -218,22 +283,27 @@ export function PlaybackTimeline({
           </div>
         ) : (
           <div
+            ref={scrollRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             className={cn(
-              "relative overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]",
+              "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5",
               TIMELINE_VIEWPORT_H
             )}
           >
-            {/* 上内边距：播放节点 box-shadow 会被 overflow 裁切 */}
-            {/* 贯穿列表的单条竖线：最底层，圆点叠在上方 */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute bottom-0 top-0 z-0 w-px -translate-x-1/2"
-              style={{
-                left: TIMELINE_AXIS_CENTER_LEFT,
-                background: axisLineBackground,
-              }}
-            />
-            <ol className={cn("relative z-[1] m-0 list-none pb-1", TIMELINE_SIX_ROWS_MIN_H)}>
+            {/* 轴线放在随列表撑高的 relative 层内；勿直接贴在 overflow 滚动根上，否则 top/bottom 只会等于视口高，下方节点无连线 */}
+            <div className="relative">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
+                style={{
+                  left: TIMELINE_AXIS_CENTER_LEFT,
+                  background: axisLineBackground,
+                }}
+              />
+              <ol className={cn("relative z-[1] m-0 list-none pb-1", TIMELINE_SIX_ROWS_MIN_H)}>
               {rows.map((row, index) => {
                 const iso = new Date(row.endMs).toISOString()
                 const datePart = formatDatePart(row.endMs, nowMs)
@@ -325,7 +395,8 @@ export function PlaybackTimeline({
                   </li>
                 )
               })}
-            </ol>
+              </ol>
+            </div>
           </div>
         )}
       </div>
