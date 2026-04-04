@@ -111,19 +111,6 @@ export const INITIAL_UNITS: Unit[] = [
     lastStatus: { ok: false, text: "失败 · 尺寸校验" },
     previewImageUrl: "https://picsum.photos/seed/mypi-frame-u3/1440/1080",
   },
-  {
-    id: "u4",
-    name: "夜间 RSS（停用）",
-    description: "夜间低打扰展示资讯摘要，当前已停用不参与轮播。",
-    typeKey: "image-weather",
-    typeLabel: "图片生成 · 天气卡片",
-    enabled: false,
-    nextRefresh: "—",
-    refreshMode: "interval",
-    intervalSeconds: 3600,
-    lastStatus: { ok: true, text: "成功 · 2.0s" },
-    previewImageUrl: "https://picsum.photos/seed/mypi-frame-u4/1440/1080",
-  },
 ]
 
 export const PARAM_SCHEMA: Record<string, ParamDef[]> = {
@@ -240,16 +227,6 @@ export const RUN_LOGS: Record<string, RunLog[]> = {
       ok: false,
       err: "校验失败：宽度 810 与设备 800 不一致",
       path: "—",
-    },
-  ],
-  u4: [
-    {
-      start: "2026-03-28 22:00:00",
-      end: "2026-03-28 22:00:02",
-      ms: 2000,
-      ok: true,
-      err: "",
-      path: "/var/epd/out/rss_20260328.png",
     },
   ],
 }

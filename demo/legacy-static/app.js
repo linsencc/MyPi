@@ -29,15 +29,6 @@ const UNITS = [
     nextRefresh: "—",
     lastStatus: { ok: false, text: "失败 · 尺寸校验" },
   },
-  {
-    id: "u4",
-    name: "夜间 RSS（停用）",
-    typeKey: "image-weather",
-    typeLabel: "图片生成 · 天气卡片",
-    enabled: false,
-    nextRefresh: "—",
-    lastStatus: { ok: true, text: "成功 · 2.0s" },
-  },
 ];
 
 const PARAM_SCHEMA = {
@@ -70,9 +61,6 @@ const RUN_LOGS = {
   ],
   u3: [
     { start: "2026-03-29 06:58:12", end: "2026-03-29 06:58:12", ms: 320, ok: false, err: "校验失败：宽度 810 与设备 800 不一致", path: "—" },
-  ],
-  u4: [
-    { start: "2026-03-28 22:00:00", end: "2026-03-28 22:00:02", ms: 2000, ok: true, err: "", path: "/var/epd/out/rss_20260328.png" },
   ],
 };
 

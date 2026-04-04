@@ -1,20 +1,15 @@
 import {
-  Activity,
   Calendar,
-  CheckCircle2,
   CircleHelp,
-  Clock,
   CloudSun,
   Monitor,
-  Pause,
   Pencil,
   Play,
   Settings2,
-  Trash2,
 } from "lucide-react"
-import { motion } from "motion/react"
 import { type CSSProperties, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react"
 
+import { PlaybackTimeline } from "@/components/PlaybackTimeline"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -40,10 +35,19 @@ import {
   type Unit,
   type UnitRefreshMode,
 } from "@/data/demo-data"
-import { dialogShell, dialogShellCompact } from "@/lib/dialog-shell"
-import { cn } from "@/lib/utils"
 
-type ListFilter = "active" | "paused" | "all"
+/** 演示：写入「立即渲染」产生的运行记录时间戳 */
+function formatInstant(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, "0")
+  const dy = String(d.getDate()).padStart(2, "0")
+  const h = String(d.getHours()).padStart(2, "0")
+  const mi = String(d.getMinutes()).padStart(2, "0")
+  const s = String(d.getSeconds()).padStart(2, "0")
+  return `${y}-${mo}-${dy} ${h}:${mi}:${s}`
+}
+import { dialogShell } from "@/lib/dialog-shell"
+import { cn } from "@/lib/utils"
 
 /** 统一为 YYYY-MM-DD HH:mm:ss */
 function formatStandardTime(raw: string): string {
@@ -56,29 +60,6 @@ function formatStandardTime(raw: string): string {
     return `${date} ${hh.padStart(2, "0")}:${mm}:${ss}`
   }
   return s
-}
-
-function formatScheduledNext(raw: string): string {
-  const s = (raw ?? "").trim()
-  if (!s || s === "—") return "—"
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return formatStandardTime(s)
-  return s
-}
-
-/** 列表区紧凑展示：YYYY-MM-DD HH:mm */
-function formatTimestampShort(raw: string): string {
-  const s = formatStandardTime(raw)
-  if (s === "—") return "—"
-  return s.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}):\d{2}$/, "$1 $2")
-}
-
-/** 顶栏：无年份 MM-DD HH:mm */
-function formatTimeNoYear(raw: string): string {
-  const s = formatStandardTime(raw)
-  if (s === "—") return "—"
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/)
-  if (!m) return formatTimestampShort(raw).replace(/^\d{4}-/, "")
-  return `${m[2]}-${m[3]} ${m[4]}:${m[5]}`
 }
 
 function nextRefreshToDatetimeLocal(raw: string): string {
@@ -111,15 +92,7 @@ function computeNextRefreshFromInterval(seconds: number): string {
   return `${y}-${mo}-${dy} ${h}:${mi}:${s}`
 }
 
-function lastSuccessEndFormatted(unitId: string): string {
-  const logs = RUN_LOGS[unitId] ?? []
-  const hit = logs.find((l) => l.ok)
-  return hit ? formatStandardTime(hit.end) : "—"
-}
-
 const ROW_ACTION_COOLDOWN_MS = 650
-
-type MonitorRow = RunLog & { unitId: string; unitName: string }
 
 function unitAccent(typeKey: string) {
   switch (typeKey) {
@@ -129,42 +102,6 @@ function unitAccent(typeKey: string) {
       return { Icon: Monitor, iconClass: "text-slate-500/90" }
     default:
       return { Icon: CloudSun, iconClass: "text-sky-500/90" }
-  }
-}
-
-function nodeStatusPresentation(u: Unit): {
-  label: string
-  dotClass: string
-  dotGlow: string
-  dotPulse: boolean
-} {
-  if (!u.enabled) {
-    return {
-      label: "停用中",
-      dotClass: "bg-slate-400",
-      dotGlow:
-        // 2px 柔光圈 + 轻微外发光（低饱和）
-        "shadow-[0_0_0_2px_rgb(148_163_184/0.18),0_0_0_1px_rgb(255_255_255/0.55),0_0_12px_3px_rgb(100_116_139/0.22)]",
-      dotPulse: false,
-    }
-  }
-  if (!u.lastStatus.ok) {
-    return {
-      label: "异常",
-      // 柔玫瑰（比 Rose-500 更淡）
-      dotClass: "bg-[#F9A8B3]",
-      dotGlow:
-        "shadow-[0_0_0_2px_rgb(249_168_179/0.11),0_0_0_1px_rgb(255_255_255/0.55),0_0_12px_4px_rgb(249_168_179/0.14)]",
-      dotPulse: false,
-    }
-  }
-  return {
-    label: "运行中",
-    // 柔翠绿（比 Emerald-500 更淡）
-    dotClass: "bg-[#7DD3AE]",
-    dotGlow:
-      "shadow-[0_0_0_2px_rgb(125_211_174/0.1),0_0_0_1px_rgb(255_255_255/0.55),0_0_12px_4px_rgb(125_211_174/0.13)]",
-    dotPulse: true,
   }
 }
 
@@ -201,11 +138,8 @@ function PreviewFrame({
 
 export default function App() {
   const [units, setUnits] = useState<Unit[]>(() => [...INITIAL_UNITS])
-  const [listFilter, setListFilter] = useState<ListFilter>("active")
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [frameDialogOpen, setFrameDialogOpen] = useState(false)
-  const [monitorOpen, setMonitorOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [rowBusyId, setRowBusyId] = useState<string | null>(null)
@@ -217,6 +151,21 @@ export default function App() {
   const [formScheduledAt, setFormScheduledAt] = useState("")
   const [frameConfig, setFrameConfig] = useState<FrameDisplayConfig>(() => loadFrameConfigFromStorage())
   const [frameDraft, setFrameDraft] = useState<FrameDisplayConfig>(() => ({ ...loadFrameConfigFromStorage() }))
+  /** 演示：用户点击「立即渲染」后追加到时间轴 / 监控的记录 */
+  const [liveRunLogExtras, setLiveRunLogExtras] = useState<Record<string, RunLog[]>>({})
+  /** 演示：打破预览缓存，使同一 URL 在渲染后立即重载缩略图 */
+  const [previewBust, setPreviewBust] = useState<Record<string, number>>({})
+
+  const mergedRunLogs = useMemo(() => {
+    const ids = new Set([...Object.keys(RUN_LOGS), ...Object.keys(liveRunLogExtras)])
+    const out: Record<string, RunLog[]> = {}
+    for (const id of ids) {
+      const extra = liveRunLogExtras[id] ?? []
+      const base = RUN_LOGS[id] ?? []
+      out[id] = extra.length ? [...extra, ...base] : base
+    }
+    return out
+  }, [liveRunLogExtras])
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -243,49 +192,14 @@ export default function App() {
   )
 
   const nowOnWall = switchableOnWall[0] ?? null
-  const deleteTargetIsOnDisplay = Boolean(
-    deleteTarget && nowOnWall?.id === deleteTarget.id
-  )
-
-  const listFiltered = useMemo(() => {
-    if (listFilter === "active") return units.filter((u) => u.enabled)
-    if (listFilter === "paused") return units.filter((u) => !u.enabled)
-    return [...units].sort((a, b) => {
-      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
-      return 0
-    })
-  }, [units, listFilter])
-
-  /** 全部运行记录（监控用） */
-  const allRunRows = useMemo(() => {
-    const rows: MonitorRow[] = []
-    units.forEach((u) => {
-      ;(RUN_LOGS[u.id] ?? []).forEach((log) => {
-        rows.push({ ...log, unitId: u.id, unitName: u.name })
-      })
-    })
-    return rows.sort((a, b) => (a.start < b.start ? 1 : -1))
-  }, [units])
-
-  const pendingRows = useMemo(() => allRunRows.filter((r) => !r.ok), [allRunRows])
-
-  const monitorMetrics = useMemo(() => {
-    const last = allRunRows[0]
-    const failCount = allRunRows.filter((r) => !r.ok).length
-    const recentErrRow = allRunRows.find((r) => !r.ok)
-    return {
-      lastTaskLabel: last ? (last.ok ? "成功" : "失败") : "—",
-      lastTaskTime: last ? formatStandardTime(last.end) : "—",
-      failCount,
-      recentError: recentErrRow?.err || "暂无",
-      recentErrorAt: recentErrRow ? formatStandardTime(recentErrRow.start) : "—",
-    }
-  }, [allRunRows])
 
   const previewSrc = (u: Unit) => {
-    if (u.previewImageUrl) return u.previewImageUrl
+    const bust = previewBust[u.id]
+    const bustSuffix = bust != null ? `${(u.previewImageUrl ?? "").includes("?") ? "&" : "?"}r=${bust}` : ""
+    if (u.previewImageUrl) return `${u.previewImageUrl}${bustSuffix}`
     const idNum = Number(u.id.replace(/\D/g, "")) || 0
-    return `https://picsum.photos/id/${1000 + (idNum % 30)}/1440/1080`
+    const base = `https://picsum.photos/id/${1000 + (idNum % 30)}/1440/1080`
+    return bust != null ? `${base}?r=${bust}` : base
   }
 
   const previewFrame = frameDialogOpen ? frameDraft : frameConfig
@@ -343,6 +257,96 @@ export default function App() {
     setEditDialogOpen(true)
   }
 
+  const runRenderNow = useCallback(
+    (u: Unit) => {
+      withRowCooldown(u.id, () => {
+        const ms = 620 + Math.floor(Math.random() * 980)
+        const wall = nowOnWall
+        const nextRefreshFor = (unit: Unit) =>
+          unit.refreshMode === "scheduled"
+            ? computeNextRefreshFromInterval(Math.max(120, unit.intervalSeconds))
+            : computeNextRefreshFromInterval(unit.intervalSeconds)
+
+        if (u.typeKey === "output-screen") {
+          const sourceName = wall?.name ?? "（无上墙画面）"
+          const path =
+            wall != null
+              ? `/var/epd/out/push_${wall.id}_${Date.now()}.png`
+              : "—"
+          const log: RunLog = {
+            start: formatInstant(new Date(Date.now() - ms)),
+            end: formatInstant(new Date()),
+            ms,
+            ok: wall != null,
+            err: wall != null ? "" : "无上墙画面可推送",
+            path,
+          }
+          setLiveRunLogExtras((prev) => ({
+            ...prev,
+            [u.id]: [log, ...(prev[u.id] ?? [])],
+          }))
+          setUnits((prev) =>
+            prev.map((x) =>
+              x.id === u.id
+                ? {
+                    ...x,
+                    enabled: true,
+                    lastStatus: wall != null
+                      ? { ok: true, text: `成功 · ${(ms / 1000).toFixed(1)}s` }
+                      : { ok: false, text: "未推送 · 无上墙画面" },
+                    nextRefresh: wall != null ? formatInstant(new Date()) : x.nextRefresh,
+                  }
+                : x
+            )
+          )
+          setPreviewBust((b) => ({ ...b, [u.id]: Date.now() }))
+          showToast(
+            wall != null
+              ? `已将「${sourceName}」推送至水墨屏（演示）`
+              : `「${u.name}」已就绪；请先让画面上墙再推送（演示）`
+          )
+          return
+        }
+
+        const log: RunLog = {
+          start: formatInstant(new Date(Date.now() - ms)),
+          end: formatInstant(new Date()),
+          ms,
+          ok: true,
+          err: "",
+          path: `/var/epd/out/render_${u.id}_${Date.now()}.png`,
+        }
+
+        setLiveRunLogExtras((prev) => ({
+          ...prev,
+          [u.id]: [log, ...(prev[u.id] ?? [])],
+        }))
+        setPreviewBust((b) => ({ ...b, [u.id]: Date.now() }))
+        setUnits((prev) => {
+          const idx = prev.findIndex((x) => x.id === u.id)
+          if (idx < 0) return prev
+          const enabled = prev.map((x) =>
+            x.id === u.id
+              ? {
+                  ...x,
+                  enabled: true,
+                  lastStatus: { ok: true, text: `成功 · ${(ms / 1000).toFixed(1)}s` },
+                  nextRefresh: nextRefreshFor(x),
+                }
+              : x
+          )
+          const j = enabled.findIndex((x) => x.id === u.id)
+          if (j < 0) return prev
+          const next = [...enabled]
+          const [item] = next.splice(j, 1)
+          return [item, ...next]
+        })
+        showToast(`「${u.name}」已上墙并完成渲染（演示）`)
+      })
+    },
+    [showToast, nowOnWall, withRowCooldown]
+  )
+
   const closeEditDialog = () => {
     setEditDialogOpen(false)
     setEditingId(null)
@@ -376,16 +380,10 @@ export default function App() {
     closeEditDialog()
   }
 
-  const filterTabs: { key: ListFilter; label: string; count: number }[] = [
-    { key: "active", label: "进行中", count: units.filter((u) => u.enabled).length },
-    { key: "paused", label: "停用中", count: units.filter((u) => !u.enabled).length },
-    { key: "all", label: "全部", count: units.length },
-  ]
-
   return (
     <div className="min-h-screen px-4 pb-24 pt-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-4xl space-y-10">
-        {/* 顶部：标题 + 画框配置 / 运行监控 */}
+        {/* 顶部：标题 + 画框配置 */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="font-display text-[1.75rem] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[2rem]">
             壁上此刻
@@ -400,54 +398,13 @@ export default function App() {
               <Settings2 className="h-4 w-4 text-slate-600" strokeWidth={1.75} />
               画框设置
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 gap-2 rounded-full border-slate-200 bg-white px-5 shadow-sm"
-              onClick={() => setMonitorOpen(true)}
-            >
-              <Activity className="h-4 w-4 text-[#0071e3]" strokeWidth={1.75} />
-              运行监控
-            </Button>
           </div>
         </header>
 
-        {/* 正在展示：顶栏仅保留当前节点与时间（无方向/区块标题）；下方仅预览 */}
         <section aria-labelledby="now-playing-heading" className="space-y-4">
           <h2 id="now-playing-heading" className="sr-only">
             画框上正在展示
           </h2>
-          {nowOnWall ? (
-            <div className="border-b border-slate-200/70 pb-3">
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px] leading-relaxed text-slate-600">
-                <span className="shrink-0 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
-                  当前展示
-                </span>
-                <span className="min-w-0 font-semibold text-slate-900">{nowOnWall.name}</span>
-                <span className="hidden h-3 w-px bg-slate-200 sm:block" aria-hidden />
-                <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                  <span className="text-slate-500">上次成功</span>
-                  <CheckCircle2
-                    className="h-3.5 w-3.5 shrink-0 text-[#5EB89A]"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                  <span className="font-mono text-[12px] tabular-nums text-slate-800">
-                    {formatTimeNoYear(lastSuccessEndFormatted(nowOnWall.id))}
-                  </span>
-                </span>
-                <span className="text-slate-200">·</span>
-                <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                  <span className="text-slate-500">下次更新</span>
-                  <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={1.75} aria-hidden />
-                  <span className="font-mono text-[12px] tabular-nums text-slate-800">
-                    {formatTimeNoYear(formatScheduledNext(nowOnWall.nextRefresh))}
-                  </span>
-                </span>
-              </p>
-            </div>
-          ) : null}
-
           {nowOnWall ? (
             <>
               <div
@@ -517,180 +474,76 @@ export default function App() {
             <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-6 py-14 text-center">
               <p className="text-[15px] font-semibold text-slate-800">暂无画框展示内容</p>
               <p className="mx-auto mt-1.5 max-w-sm text-[12px] leading-relaxed text-slate-500">
-                启用至少一个绘画节点后，将在此显示预览与刷新时间。
+                启用至少一个绘画节点后，将在此显示预览。
               </p>
             </div>
           )}
         </section>
 
-        {/* 绘画节点列表 */}
-        <section className="space-y-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">绘画节点</h2>
-            <div
-              className="relative flex flex-wrap gap-0 rounded-full bg-slate-200/55 p-1 ring-1 ring-slate-900/[0.05]"
-              role="tablist"
-              aria-label="筛选列表"
-            >
-              {filterTabs.map(({ key, label, count }) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={listFilter === key}
-                  onClick={() => setListFilter(key)}
-                  className={cn(
-                    "relative z-10 rounded-full px-3.5 py-2.5 text-[13px] font-medium transition-colors duration-200",
-                    listFilter === key
-                      ? "text-slate-900"
-                      : key === "all"
-                        ? "text-slate-400 hover:text-slate-600"
-                        : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  {listFilter === key ? (
-                    <motion.span
-                      layoutId="node-filter-pill"
-                      className="absolute inset-0 -z-10 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.04),0_20px_48px_-28px_rgb(15_23_42/0.12)] ring-1 ring-slate-900/[0.06]"
-                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                    />
-                  ) : null}
-                  <span className="relative z-10">
-                    {label}
-                    <span
-                      className={cn(
-                        "ml-1 tabular-nums text-[12px]",
-                        listFilter === key ? "text-slate-500" : "text-slate-400"
-                      )}
-                    >
-                      {count}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+        <PlaybackTimeline
+          units={units}
+          currentOnWall={nowOnWall ? { id: nowOnWall.id, name: nowOnWall.name } : null}
+          runLogs={mergedRunLogs}
+        />
 
-          <ul className="space-y-4">
-            {listFiltered.map((u) => {
+        <section className="space-y-5">
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">绘画节点</h2>
+
+          <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10.25rem,1fr))] sm:gap-3">
+            {units.map((u) => {
               const disabled = !u.enabled
               const rowLocked = rowBusyId === u.id
-              const status = nodeStatusPresentation(u)
               return (
                 <li
                   key={u.id}
                   className={cn(
-                    "group rounded-[1.35rem] border border-slate-900/[0.055] bg-white/95 shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_28px_72px_-36px_rgb(15_23_42/0.14),0_12px_28px_-18px_rgb(15_23_42/0.06)] backdrop-blur-[2px]",
-                    disabled && listFilter === "all" && "opacity-[0.72]"
+                    "group flex aspect-square min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-900/[0.055] bg-white/95 shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_14px_36px_-22px_rgb(15_23_42/0.12),0_6px_14px_-10px_rgb(15_23_42/0.05)] backdrop-blur-[2px]",
+                    disabled && "opacity-[0.72]"
                   )}
                 >
-                  <div className="flex flex-col gap-4 px-6 py-6 sm:py-7">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span
-                        className={cn(
-                          "inline-block h-2 w-2 shrink-0 rounded-full",
-                          status.dotClass,
-                          status.dotGlow,
-                          status.dotPulse && "animate-status-breathe"
-                        )}
-                        aria-hidden
-                      />
-                      <h3 className="min-w-0 text-[17px] font-semibold leading-[1.35] tracking-tight text-slate-900">
+                  <div className="relative w-full shrink-0 basis-[42%] overflow-hidden bg-slate-100">
+                    <PreviewFrame
+                      src={previewSrc(u)}
+                      alt={`${u.name} 缩略预览`}
+                      imageFilter={previewFilter}
+                    />
+                  </div>
+
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-end gap-1.5 px-2.5 pb-2 pt-1 sm:gap-2 sm:px-3 sm:pb-2.5 sm:pt-1.5">
+                    <div
+                      className="min-w-0"
+                      title={u.description ? `${u.name}\n${u.description}` : u.name}
+                    >
+                      <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[13px]">
                         {u.name}
-                        <span className="sr-only"> · {status.label}</span>
                       </h3>
                     </div>
-                    <p
-                      className="line-clamp-2 text-[13px] font-light leading-[1.85] text-slate-500"
-                      title={u.description}
-                    >
-                      {u.description}
-                    </p>
-                    <div className="flex flex-col gap-4 border-t border-slate-100/90 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
-                      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px] leading-relaxed text-slate-600">
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <span className="text-slate-500">上次成功</span>
-                          <CheckCircle2
-                            className="h-3.5 w-3.5 shrink-0 text-[#5EB89A]"
-                            strokeWidth={1.75}
-                            aria-hidden
-                          />
-                          <span className="font-mono tabular-nums text-slate-800">
-                            {formatTimeNoYear(lastSuccessEndFormatted(u.id))}
-                          </span>
-                        </span>
-                        <span className="text-slate-200">·</span>
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <span className="text-slate-500">下次更新</span>
-                          <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={1.75} aria-hidden />
-                          <span className="font-mono tabular-nums text-slate-800">
-                            {formatTimeNoYear(formatScheduledNext(u.nextRefresh))}
-                          </span>
-                        </span>
-                      </p>
-                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5">
-                        {!u.enabled ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 shrink-0 rounded-full text-slate-700 transition-[background-color,color,transform] duration-200 hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30 active:scale-95"
-                            disabled={rowLocked}
-                            title="启用"
-                            aria-label={`启用「${u.name}」`}
-                            onClick={() =>
-                              withRowCooldown(u.id, () => {
-                                setUnits((prev) => prev.map((x) => (x.id === u.id ? { ...x, enabled: true } : x)))
-                                showToast(`「${u.name}」已启用，列表已更新`)
-                              })
-                            }
-                          >
-                            <Play className="h-[17px] w-[17px]" strokeWidth={1.25} />
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 shrink-0 rounded-full text-slate-700 transition-[background-color,color,transform] duration-200 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 active:scale-95"
-                            disabled={rowLocked}
-                            title="停用"
-                            aria-label={`停用「${u.name}」`}
-                            onClick={() =>
-                              withRowCooldown(u.id, () => {
-                                setUnits((prev) => prev.map((x) => (x.id === u.id ? { ...x, enabled: false } : x)))
-                                showToast(`「${u.name}」已停用，列表已更新`)
-                              })
-                            }
-                          >
-                            <Pause className="h-[17px] w-[17px]" strokeWidth={1.25} />
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 shrink-0 rounded-full text-slate-700 transition-[background-color,color,transform] duration-200 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 active:scale-95"
-                          disabled={rowLocked}
-                          title="编辑"
-                          aria-label={`编辑「${u.name}」`}
-                          onClick={() => openEdit(u.id)}
-                        >
-                          <Pencil className="h-[17px] w-[17px]" strokeWidth={1.25} />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 shrink-0 rounded-full text-slate-700 transition-[background-color,color,transform] duration-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/80 active:scale-95"
-                          disabled={rowLocked}
-                          title="删除"
-                          aria-label={`删除「${u.name}」`}
-                          onClick={() => setDeleteTarget(u)}
-                        >
-                          <Trash2 className="h-[17px] w-[17px]" strokeWidth={1.25} />
-                        </Button>
-                      </div>
+
+                    <div className="flex shrink-0 items-center justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                        disabled={rowLocked}
+                        title="立即执行渲染并优先上墙"
+                        aria-label={`立即渲染「${u.name}」`}
+                        onClick={() => runRenderNow(u)}
+                      >
+                        <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                        disabled={rowLocked}
+                        title="编辑间隔或定时刷新"
+                        aria-label={`编辑渲染时间「${u.name}」`}
+                        onClick={() => openEdit(u.id)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                      </Button>
                     </div>
                   </div>
                 </li>
@@ -858,7 +711,7 @@ export default function App() {
           className={dialogShell("max-h-[min(92dvh,720px)] w-[calc(100vw-1.5rem)] max-w-xl sm:max-w-xl")}
         >
           <DialogHeader className="border-b border-slate-100 px-6 pb-3.5 pt-5 pr-14 text-left">
-            <DialogTitle className="text-[17px] font-semibold tracking-tight text-slate-900">编辑节点</DialogTitle>
+            <DialogTitle className="text-[17px] font-semibold tracking-tight text-slate-900">编辑渲染时间</DialogTitle>
           </DialogHeader>
 
           <div className="max-h-[min(58dvh,520px)] overflow-y-auto px-6 py-4">
@@ -950,190 +803,6 @@ export default function App() {
               onClick={handleSave}
             >
               保存
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 运行监控 */}
-      <Dialog open={monitorOpen} onOpenChange={setMonitorOpen}>
-        <DialogContent
-          className={dialogShell("max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-3xl sm:max-w-3xl")}
-        >
-          <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6 pr-14">
-            <div className="flex items-start justify-between gap-3">
-              <DialogTitle className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                <Activity className="h-5 w-5 text-[#0071e3]" />
-                运行监控
-              </DialogTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 rounded-full"
-                onClick={() => {
-                  setMonitorOpen(false)
-                  const first = units[0]
-                  if (first) openEdit(first.id)
-                }}
-              >
-                打开节点日志
-              </Button>
-            </div>
-          </DialogHeader>
-
-          <div className="max-h-[calc(90vh-6.5rem)] overflow-y-auto px-6 pb-6">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">最近任务</p>
-                <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <p className="text-[15px] font-semibold text-slate-900">{monitorMetrics.lastTaskLabel}</p>
-                  <p
-                    className={cn(
-                      "text-[12px] font-semibold tabular-nums",
-                      monitorMetrics.failCount > 0 ? "text-rose-700" : "text-slate-500"
-                    )}
-                  >
-                    失败 {monitorMetrics.failCount}
-                  </p>
-                </div>
-                <p className="mt-1 font-mono text-[12px] text-slate-600">{monitorMetrics.lastTaskTime}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">最近错误</p>
-                <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-slate-800" title={monitorMetrics.recentError}>
-                  {monitorMetrics.recentError}
-                </p>
-                <p className="mt-1 font-mono text-[11px] text-slate-400">{monitorMetrics.recentErrorAt}</p>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <h3 className="text-[13px] font-semibold text-slate-900">异常队列</h3>
-              {pendingRows.length === 0 ? (
-                <p className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-[13px] text-slate-500">
-                  暂无失败记录
-                </p>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {pendingRows.map((row, i) => (
-                    <li
-                      key={`${row.unitId}-${row.start}-${i}`}
-                      className="flex flex-col gap-2 rounded-2xl border border-rose-100 bg-rose-50/35 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-slate-900">{row.unitName}</p>
-                        <p className="font-mono text-[12px] text-slate-500">
-                          {formatStandardTime(row.start)} · 失败
-                        </p>
-                        {row.err ? <p className="mt-1 text-[12px] text-rose-700">{row.err}</p> : null}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 rounded-full border-slate-200 text-[12px]"
-                        onClick={() => {
-                          setMonitorOpen(false)
-                          openEdit(row.unitId)
-                        }}
-                      >
-                        查看节点
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="mt-8">
-              <h3 className="text-[13px] font-semibold text-slate-900">最近运行</h3>
-              <ul className="mt-3 space-y-2">
-                {allRunRows.slice(0, 10).map((row, i) => (
-                  <li
-                    key={`${row.unitId}-${row.start}-${i}`}
-                    className={cn(
-                      "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 text-[12px]",
-                      row.ok ? "border-slate-100 bg-white" : "border-rose-100 bg-rose-50/30"
-                    )}
-                  >
-                    <span className="min-w-0 truncate font-medium text-slate-800">{row.unitName}</span>
-                    <span className="justify-self-end font-mono text-slate-500">{formatStandardTime(row.start)}</span>
-                    <span
-                      className={cn(
-                        "rounded-md px-2 py-0.5 text-[11px] font-semibold",
-                        row.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-100 text-rose-800"
-                      )}
-                    >
-                      {row.ok ? "成功" : "失败"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
-        }}
-      >
-        <DialogContent className={dialogShellCompact("w-[calc(100vw-1.5rem)] max-w-md")}>
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-slate-900">确认删除节点？</DialogTitle>
-            {deleteTarget ? (
-              <div className="space-y-3 pt-2 text-left text-[13px] leading-relaxed text-slate-600">
-                <p>
-                  即将删除「<span className="font-medium text-slate-800">{deleteTarget.name}</span>
-                  」。此操作仅移除配置与调度，<strong className="font-medium text-slate-800">不会删除</strong>
-                  服务端已持久化的运行与输出历史（演示页中的运行记录为静态示例，亦不受此删除影响）。
-                </p>
-                <p>
-                  {deleteTargetIsOnDisplay ? (
-                    <>
-                      该节点<strong className="font-medium text-slate-800">正在画框上展示</strong>
-                      ，删除后画框将<strong className="font-medium text-slate-800">立即</strong>
-                      切换为下一个已启用且可展示节点；若无可用节点，当前展示区域将变为无内容。
-                    </>
-                  ) : (
-                    <>
-                      该节点<strong className="font-medium text-slate-800">不是</strong>
-                      当前展示节点，删除后<strong className="font-medium text-slate-800">不会</strong>
-                      改变画框当前画面。
-                    </>
-                  )}
-                </p>
-              </div>
-            ) : null}
-          </DialogHeader>
-          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-full"
-              onClick={() => setDeleteTarget(null)}
-            >
-              取消
-            </Button>
-            <Button
-              type="button"
-              className="rounded-full bg-rose-600 text-white hover:bg-rose-700"
-              disabled={!deleteTarget || rowBusyId === deleteTarget?.id}
-              onClick={() => {
-                if (!deleteTarget || rowBusyId === deleteTarget.id) return
-                const name = deleteTarget.name
-                const id = deleteTarget.id
-                setDeleteTarget(null)
-                withRowCooldown(id, () => {
-                  setUnits((prev) => prev.filter((x) => x.id !== id))
-                  showToast(`「${name}」已删除，列表已更新`)
-                })
-              }}
-            >
-              删除
             </Button>
           </div>
         </DialogContent>

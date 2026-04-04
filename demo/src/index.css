@@ -76,23 +76,6 @@
   }
 }
 
-/** 节点卡片：运行中状态圆点「呼吸」 */
-@keyframes status-breathe {
-  0%,
-  100% {
-    opacity: 1;
-    filter: saturate(1);
-  }
-  50% {
-    opacity: 0.72;
-    filter: saturate(0.95);
-  }
-}
-
-@utility animate-status-breathe {
-  animation: status-breathe 2.2s ease-in-out infinite;
-}
-
 @utility font-display {
   font-family: var(--font-display);
 }
