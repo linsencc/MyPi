@@ -7,7 +7,14 @@ $env:PYTHONPATH = (Get-Location).Path
 python app/factory.py
 ```
 
-默认端口 `5050`。前端 `demo` 已配置 Vite 将 `/api` 代理到该端口。
+若开启 **`FLASK_DEBUG=1`**，Werkzeug 会起父子双进程，浏览器可能打到**未执行过上墙**的那个进程，导致 `wall/state` 与「立即上墙」不同步、预览仍像未上墙。本地联调 Web 预览时可改用**单进程**：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+python _dev_serve.py
+```
+
+默认端口 `5050`。前端 `web` / `demo` 的 Vite 将 `/api` 代理到该端口。
 
 环境变量：
 

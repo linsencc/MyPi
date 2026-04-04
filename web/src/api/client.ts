@@ -74,9 +74,12 @@ export function putScene(id: string, scene: Scene) {
 }
 
 export function showNow(sceneId: string) {
-  return fetchJson<{ ok: boolean }>(`/scenes/${encodeURIComponent(sceneId)}/show-now`, {
-    method: "POST",
-  })
+  return fetchJson<{ ok: boolean; wallState?: WallState }>(
+    `/scenes/${encodeURIComponent(sceneId)}/show-now`,
+    {
+      method: "POST",
+    }
+  )
 }
 
 export function getWallState() {

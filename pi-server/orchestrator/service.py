@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 from collections import deque
 from datetime import UTC, datetime
 
@@ -93,9 +94,11 @@ class WallOrchestrator:
             with self._display_lock:
                 run = self._pipeline.run_scene(sc, cfg.frame_tuning, cfg.device_profile)
             if run.ok and run.output_path:
+                bn = Path(run.output_path).name
+                preview = f"/api/v1/output/{run.id}/{bn}"
                 self._wall_state = WallState(
                     current_scene_id=sc.id,
-                    current_preview_url=None,
+                    current_preview_url=preview,
                     upcoming=self._wall_state.upcoming,
                 )
 

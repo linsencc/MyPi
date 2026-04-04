@@ -1,4 +1,4 @@
-﻿"""Smoke verification for pi-server API (Flask test_client). Run from pi-server: PYTHONPATH=. python verify_demo.py"""
+"""Smoke verification for pi-server API (Flask test_client). Run from pi-server: PYTHONPATH=. python verify_demo.py"""
 from __future__ import annotations
 
 import json
@@ -65,6 +65,13 @@ def main() -> int:
             fails += 1
         else:
             print("OK show-now")
+            wsb = sn.get("wallState") or {}
+            p0 = wsb.get("currentPreviewUrl")
+            if not p0 or not str(p0).startswith("/api/v1/output/"):
+                print("FAIL show-now wallState.currentPreviewUrl", p0)
+                fails += 1
+            else:
+                print("OK show-now embeds preview URL")
 
         r = c.get("/api/v1/wall/state")
         ws = j(r)
@@ -73,6 +80,17 @@ def main() -> int:
             fails += 1
         else:
             print("OK wall/state upcoming", len(ws["upcoming"]))
+        prev = (ws or {}).get("currentPreviewUrl")
+        if not prev or not str(prev).startswith("/api/v1/output/"):
+            print("FAIL wall/state currentPreviewUrl", prev)
+            fails += 1
+        else:
+            r = c.get(prev)
+            if r.status_code != 200 or r.data[:8] != b"\x89PNG\r\n\x1a\n":
+                print("FAIL output image", r.status_code, prev)
+                fails += 1
+            else:
+                print("OK wall preview PNG", prev)
 
         r = c.get("/api/v1/wall/runs")
         runs = j(r)

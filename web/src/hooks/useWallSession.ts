@@ -23,9 +23,12 @@ type NodeCardRow = { template: TemplateMeta; scene: Scene }
 const PLACEHOLDER = PREVIEW_PLACEHOLDER_SRC
 const ROW_COOLDOWN_MS = 650
 
-function isHttpUrl(s: string | null | undefined): boolean {
-  if (!s) return false
-  return /^https?:\/\//i.test(s.trim())
+/** http(s) 或同源相对路径（经 Vite 代理到 pi-server 的 /api/...） */
+function isUsableImageRef(s: string | null | undefined): boolean {
+  if (!s?.trim()) return false
+  const t = s.trim()
+  if (t.startsWith("/")) return true
+  return /^https?:\/\//i.test(t)
 }
 
 export function useWallSession() {
@@ -148,12 +151,12 @@ export function useWallSession() {
   const previewFilter = useMemo(() => getPreviewImageFilter(frameConfig.imageSettings), [frameConfig])
 
   const previewSrc = useCallback(
-    (scene: Scene, role: PreviewSrcRole = "hero") => {
-      if (role === "hero" && wallState?.currentSceneId === scene.id) {
+    (scene: Scene, _role: PreviewSrcRole = "hero") => {
+      if (wallState?.currentSceneId === scene.id) {
         const u = wallState.currentPreviewUrl
-        if (isHttpUrl(u)) return u!.trim()
+        if (isUsableImageRef(u)) return u!.trim()
       }
-      if (isHttpUrl(scene.previewImageUrl)) return scene.previewImageUrl!.trim()
+      if (isUsableImageRef(scene.previewImageUrl)) return scene.previewImageUrl!.trim()
       return PLACEHOLDER
     },
     [wallState]
@@ -223,8 +226,9 @@ export function useWallSession() {
       withCooldown(scene.id, () => {
         void (async () => {
           try {
-            await showNow(scene.id)
-            showToast(`已排队：${sceneNames[scene.id] ?? scene.templateId}`)
+            const sn = await showNow(scene.id)
+            if (sn.wallState) setWallState(sn.wallState)
+            showToast(`已上墙：${sceneNames[scene.id] ?? scene.templateId}`)
             await refresh()
           } catch (e) {
             const msg =

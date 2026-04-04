@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+import re
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request, send_file
 
 from domain.models import AppConfig, Scene
 from storage.stores import load_config, save_config
 
 bp = Blueprint("v1", __name__)
+
+_RUN_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_OUTPUT_NAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 
 def _orch():
@@ -101,14 +108,38 @@ def show_now(scene_id: str):
         return jsonify({"error": "not found"}), 404
     if not scene.enabled:
         return jsonify({"error": "scene disabled"}), 400
-    _orch().enqueue_show_now(scene_id)
-    return jsonify({"ok": True})
+    orch = _orch()
+    orch.enqueue_show_now(scene_id)
+    return jsonify(
+        {
+            "ok": True,
+            "wallState": orch.wall_state.model_dump(mode="json", by_alias=True),
+        }
+    )
 
 
 @bp.get("/wall/state")
 def wall_state():
     st = _orch().wall_state
     return jsonify(st.model_dump(mode="json", by_alias=True))
+
+
+@bp.get("/output/<run_id>/<filename>")
+def output_image(run_id: str, filename: str):
+    """Serve a rendered frame from data/output so the web app can use it as <img src>."""
+    from storage.paths import output_dir
+
+    if not _RUN_ID_RE.match(run_id) or not _OUTPUT_NAME_RE.match(filename):
+        abort(404)
+    root = output_dir().resolve()
+    p = (root / run_id / filename).resolve()
+    try:
+        p.relative_to(root)
+    except ValueError:
+        abort(404)
+    if not p.is_file():
+        abort(404)
+    return send_file(p, mimetype="image/png")
 
 
 @bp.get("/wall/runs")
