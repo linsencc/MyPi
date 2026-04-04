@@ -1,0 +1,5 @@
+﻿Flask>=3.0,<4
+pydantic>=2.6,<3
+APScheduler>=3.10,<4
+Pillow>=10.0,<12
+gunicorn>=22.0,<24

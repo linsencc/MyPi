@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from typing import Annotated, Any, Literal, Union
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class IntervalSchedule(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: Literal["interval"] = "interval"
+    interval_seconds: int = Field(gt=0, alias="intervalSeconds")
+
+
+class CronWeeklySchedule(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: Literal["cron_weekly"] = "cron_weekly"
+    time: str = Field(description="HH:MM local")
+    weekdays: list[int] = Field(
+        default_factory=lambda: list(range(7)),
+        description="0=Sunday (same as JS)",
+    )
+
+
+Schedule = Annotated[
+    Union[IntervalSchedule, CronWeeklySchedule],
+    Field(discriminator="type"),
+]
+
+
+class Scene(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    name: str = ""
+    description: str = ""
+    enabled: bool = True
+    template_id: str = Field(alias="templateId")
+    template_params: dict[str, Any] = Field(default_factory=dict, alias="templateParams")
+    schedule: Schedule
+    preview_image_url: str | None = Field(None, alias="previewImageUrl")
+    tie_break_priority: int = Field(9, alias="tieBreakPriority")
+
+
+class AppConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    scenes: list[Scene] = Field(default_factory=list)
+    frame_tuning: dict[str, Any] = Field(default_factory=dict, alias="frameTuning")
+    device_profile: dict[str, Any] = Field(default_factory=dict, alias="deviceProfile")
+
+    @model_validator(mode="after")
+    def unique_template_ids(self) -> AppConfig:
+        seen: set[str] = set()
+        for s in self.scenes:
+            if s.template_id in seen:
+                raise ValueError(f"duplicate templateId in config: {s.template_id}")
+            seen.add(s.template_id)
+        return self
+
+
+class WallRun(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    scene_id: str = Field(alias="sceneId")
+    started_at: str = Field(alias="startedAt")
+    finished_at: str | None = Field(None, alias="finishedAt")
+    duration_ms: int | None = Field(None, alias="durationMs")
+    ok: bool
+    error_message: str | None = Field(None, alias="errorMessage")
+    output_path: str | None = Field(None, alias="outputPath")
+
+
+class UpcomingItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    scene_id: str = Field(alias="sceneId")
+    at: str
+    name: str = ""
+
+
+class WallState(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    current_scene_id: str | None = Field(None, alias="currentSceneId")
+    current_preview_url: str | None = Field(None, alias="currentPreviewUrl")
+    upcoming: list[UpcomingItem] = Field(default_factory=list)

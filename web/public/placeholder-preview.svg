@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">
+  <rect width="400" height="300" fill="#e2e8f0"/>
+  <rect x="1" y="1" width="398" height="298" stroke="#94a3b8" stroke-width="2" fill="none" rx="8"/>
+  <path d="M140 115h120v70H140z" stroke="#64748b" stroke-width="2" fill="#f1f5f9" rx="4"/>
+  <circle cx="175" cy="145" r="12" fill="#94a3b8"/>
+  <path d="M155 175l28-22 18 16 24-30v36H155z" fill="#cbd5e1"/>
+  <text x="200" y="220" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="14">无预览图 URL</text>
+</svg>
