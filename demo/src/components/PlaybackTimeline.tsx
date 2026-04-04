@@ -93,6 +93,13 @@ function dotClass(kind: DotKind, ok: boolean): string {
 
 const MAX_EVENTS = 6
 
+/** 单行最小高度，6 行固定视区避免条数从少变多时整体高度跳动 */
+const TIMELINE_ROW_MIN_H = "min-h-[2.625rem]"
+/** 列表区 6 行净高（不含滚动容器 pt-5 / pb-2） */
+const TIMELINE_SIX_ROWS_MIN_H = "min-h-[15.75rem]"
+/** 滚动区总高：上内边距 + 6 行 + 下内边距（与 pt-5、pb-2、ol pb-1 对齐） */
+const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
+
 /** 对称时间轴：左时间 + 中轴（圆点）+ 右内容 */
 const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
 /** 与网格中缝对齐，用于视口底部轴线淡出层 */
@@ -201,9 +208,21 @@ export function PlaybackTimeline({
 
       <div className="relative">
         {showEmptyHistory ? (
-          <p className="py-4 text-center text-[12px] text-slate-400">暂无历史记录</p>
+          <div
+            className={cn(
+              "relative flex items-center justify-center overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]",
+              TIMELINE_VIEWPORT_H
+            )}
+          >
+            <p className="text-center text-[12px] text-slate-400">暂无历史记录</p>
+          </div>
         ) : (
-          <div className="relative max-h-[min(280px,45vh)] overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]">
+          <div
+            className={cn(
+              "relative overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]",
+              TIMELINE_VIEWPORT_H
+            )}
+          >
             {/* 上内边距：播放节点 box-shadow 会被 overflow 裁切 */}
             {/* 贯穿列表的单条竖线：最底层，圆点叠在上方 */}
             <div
@@ -214,7 +233,7 @@ export function PlaybackTimeline({
                 background: axisLineBackground,
               }}
             />
-            <ol className="relative z-[1] m-0 list-none pb-1">
+            <ol className={cn("relative z-[1] m-0 list-none pb-1", TIMELINE_SIX_ROWS_MIN_H)}>
               {rows.map((row, index) => {
                 const iso = new Date(row.endMs).toISOString()
                 const datePart = formatDatePart(row.endMs, nowMs)
@@ -227,6 +246,7 @@ export function PlaybackTimeline({
                     key={row.key}
                     className={cn(
                       "grid items-center gap-0 py-1.5",
+                      TIMELINE_ROW_MIN_H,
                       "transition-[background-color,opacity] duration-150 hover:bg-slate-200/[0.09]",
                       isPast && "opacity-[0.93]",
                       index !== rows.length - 1 && "border-b border-slate-200/[0.14]"

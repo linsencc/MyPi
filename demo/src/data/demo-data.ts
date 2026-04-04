@@ -11,8 +11,12 @@ export interface Unit {
   nextRefresh: string
   /** 演示：刷新策略（间隔 / 定时），在编辑节点弹窗中配置 */
   refreshMode: UnitRefreshMode
-  /** 间隔更新时的周期（秒）；定时模式下可保留上次值供切换回间隔时使用 */
+  /** 频率循环：周期（秒），供运行逻辑与切换模式时保留 */
   intervalSeconds: number
+  /** 周期定时：触发时刻 HH:mm（24h） */
+  scheduledClock: string
+  /** 周期定时：重复星期，0=周日…6=周六（与 Date.getDay() 一致） */
+  scheduledWeekdays: number[]
   lastStatus: { ok: boolean; text: string }
   /** 当前画面预览图，可为实际输出缩略图地址；演示用占位 */
   previewImageUrl?: string
@@ -82,6 +86,8 @@ export const INITIAL_UNITS: Unit[] = [
     nextRefresh: "2026-03-29 08:05:00",
     refreshMode: "interval",
     intervalSeconds: 300,
+    scheduledClock: "08:00",
+    scheduledWeekdays: [],
     lastStatus: { ok: true, text: "成功 · 1.2s" },
     previewImageUrl: "/shunde-city-sounds.png",
   },
@@ -95,6 +101,8 @@ export const INITIAL_UNITS: Unit[] = [
     nextRefresh: "2026-03-29 09:00:00",
     refreshMode: "scheduled",
     intervalSeconds: 3600,
+    scheduledClock: "09:00",
+    scheduledWeekdays: [0, 1, 2, 3, 4, 5, 6],
     lastStatus: { ok: true, text: "成功 · 0.8s" },
     previewImageUrl: "https://picsum.photos/seed/mypi-frame-u2/1440/1080",
   },
@@ -108,6 +116,8 @@ export const INITIAL_UNITS: Unit[] = [
     nextRefresh: "—",
     refreshMode: "interval",
     intervalSeconds: 120,
+    scheduledClock: "06:00",
+    scheduledWeekdays: [],
     lastStatus: { ok: false, text: "失败 · 尺寸校验" },
     previewImageUrl: "https://picsum.photos/seed/mypi-frame-u3/1440/1080",
   },

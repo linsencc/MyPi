@@ -7,8 +7,10 @@ import {
   Play,
   Settings2,
 } from "lucide-react"
-import { type CSSProperties, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react"
+import { type CSSProperties, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 
+import { IntervalUnitSelect } from "@/components/IntervalUnitSelect"
+import { ScheduleTimePicker } from "@/components/ScheduleTimePicker"
 import { PlaybackTimeline } from "@/components/PlaybackTimeline"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,6 +37,18 @@ import {
   type Unit,
   type UnitRefreshMode,
 } from "@/data/demo-data"
+import {
+  computeNextScheduledRefresh,
+  describeRefreshPreview,
+  formToIntervalSeconds,
+  intervalSecondsToForm,
+  normalizeWeekdaysSelection,
+  parseClockFromNextRefresh,
+  weekdayShort,
+  WEEKDAY_ORDER_UI,
+  WEEKDAY_PRESETS,
+  type IntervalTimeUnit,
+} from "@/lib/refresh-schedule"
 
 /** 演示：写入「立即渲染」产生的运行记录时间戳 */
 function formatInstant(d: Date): string {
@@ -49,36 +63,14 @@ function formatInstant(d: Date): string {
 import { dialogShell } from "@/lib/dialog-shell"
 import { cn } from "@/lib/utils"
 
+/** 编辑弹窗：标签降权（小字、灰、字间距） */
+const editDialogLabelClass = "text-[12px] font-medium leading-none tracking-[0.04em] text-[#666666]"
+
+/** 编辑弹窗：输入弱边框浅底，聚焦时提亮 */
+const editDialogFieldClass =
+  "rounded-[length:var(--radius-md)] border-slate-200/45 bg-slate-100/40 shadow-none transition-[border-color,background-color,box-shadow] placeholder:text-slate-400/90 focus-visible:border-[#0071e3]/45 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-[#0071e3]/15 focus-visible:ring-offset-0"
+
 /** 统一为 YYYY-MM-DD HH:mm:ss */
-function formatStandardTime(raw: string): string {
-  const s = (raw ?? "").trim()
-  if (!s || s === "—") return "—"
-  const normalized = s.replace("T", " ")
-  const m = normalized.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})/)
-  if (m) {
-    const [, date, hh, mm, ss] = m
-    return `${date} ${hh.padStart(2, "0")}:${mm}:${ss}`
-  }
-  return s
-}
-
-function nextRefreshToDatetimeLocal(raw: string): string {
-  const s = formatStandardTime(raw)
-  if (s === "—") return ""
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/)
-  if (!m) return ""
-  return `${m[1]}T${m[2]}:${m[3]}`
-}
-
-function datetimeLocalToNextRefresh(v: string): string {
-  const t = (v ?? "").trim()
-  if (!t) return "—"
-  const m = t.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/)
-  if (!m) return "—"
-  const ss = m[4] ?? "00"
-  return `${m[1]} ${m[2]}:${m[3]}:${ss}`
-}
-
 function computeNextRefreshFromInterval(seconds: number): string {
   const sec = Math.max(30, Math.floor(Number(seconds)) || 300)
   const d = new Date()
@@ -143,12 +135,14 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [rowBusyId, setRowBusyId] = useState<string | null>(null)
+  const editDialogContentRef = useRef<HTMLDivElement>(null)
+  const editDialogScrollRef = useRef<HTMLDivElement>(null)
 
-  const [formName, setFormName] = useState("")
-  const [formDescription, setFormDescription] = useState("")
   const [formRefreshMode, setFormRefreshMode] = useState<UnitRefreshMode>("interval")
-  const [formInterval, setFormInterval] = useState(300)
-  const [formScheduledAt, setFormScheduledAt] = useState("")
+  const [formIntervalValue, setFormIntervalValue] = useState(5)
+  const [formIntervalUnit, setFormIntervalUnit] = useState<IntervalTimeUnit>("m")
+  const [formScheduledClock, setFormScheduledClock] = useState("09:00")
+  const [formWeekdays, setFormWeekdays] = useState<number[]>(() => [...WEEKDAY_PRESETS.daily])
   const [frameConfig, setFrameConfig] = useState<FrameDisplayConfig>(() => loadFrameConfigFromStorage())
   const [frameDraft, setFrameDraft] = useState<FrameDisplayConfig>(() => ({ ...loadFrameConfigFromStorage() }))
   /** 演示：用户点击「立即渲染」后追加到时间轴 / 监控的记录 */
@@ -192,6 +186,32 @@ export default function App() {
   )
 
   const nowOnWall = switchableOnWall[0] ?? null
+
+  const editingUnit = useMemo(
+    () => (editingId ? (units.find((u) => u.id === editingId) ?? null) : null),
+    [units, editingId]
+  )
+
+  const schedulePreviewText = useMemo(
+    () =>
+      describeRefreshPreview(
+        formRefreshMode,
+        formIntervalValue,
+        formIntervalUnit,
+        formScheduledClock,
+        formWeekdays
+      ),
+    [formRefreshMode, formIntervalValue, formIntervalUnit, formScheduledClock, formWeekdays]
+  )
+
+  const toggleWeekday = useCallback((d: number) => {
+    setFormWeekdays((prev) => {
+      const next = new Set(prev)
+      if (next.has(d)) next.delete(d)
+      else next.add(d)
+      return WEEKDAY_ORDER_UI.filter((x) => next.has(x))
+    })
+  }, [])
 
   const previewSrc = (u: Unit) => {
     const bust = previewBust[u.id]
@@ -249,11 +269,12 @@ export default function App() {
     const u = units.find((x) => x.id === id)
     if (!u) return
     setEditingId(id)
-    setFormName(u.name)
-    setFormDescription(u.description)
     setFormRefreshMode(u.refreshMode)
-    setFormInterval(u.intervalSeconds)
-    setFormScheduledAt(nextRefreshToDatetimeLocal(u.nextRefresh))
+    const { value, unit } = intervalSecondsToForm(u.intervalSeconds)
+    setFormIntervalValue(value)
+    setFormIntervalUnit(unit)
+    setFormScheduledClock((u.scheduledClock ?? "").trim() || parseClockFromNextRefresh(u.nextRefresh))
+    setFormWeekdays(normalizeWeekdaysSelection(u.scheduledWeekdays))
     setEditDialogOpen(true)
   }
 
@@ -262,10 +283,14 @@ export default function App() {
       withRowCooldown(u.id, () => {
         const ms = 620 + Math.floor(Math.random() * 980)
         const wall = nowOnWall
-        const nextRefreshFor = (unit: Unit) =>
-          unit.refreshMode === "scheduled"
-            ? computeNextRefreshFromInterval(Math.max(120, unit.intervalSeconds))
-            : computeNextRefreshFromInterval(unit.intervalSeconds)
+        const nextRefreshFor = (unit: Unit) => {
+          if (unit.refreshMode === "scheduled") {
+            const days =
+              unit.scheduledWeekdays.length > 0 ? unit.scheduledWeekdays : [0, 1, 2, 3, 4, 5, 6]
+            return computeNextScheduledRefresh(unit.scheduledClock || "09:00", days, new Date())
+          }
+          return computeNextRefreshFromInterval(unit.intervalSeconds)
+        }
 
         if (u.typeKey === "output-screen") {
           const sourceName = wall?.name ?? "（无上墙画面）"
@@ -354,25 +379,38 @@ export default function App() {
 
   const handleSave = () => {
     if (!editingId) return
-    const name = formName.trim() || "未命名画面"
-    const description = formDescription.trim() || "未填写描述"
-    const intervalSeconds = Math.max(30, Math.floor(Number(formInterval)) || 300)
+    if (formRefreshMode === "scheduled") {
+      if (formWeekdays.length === 0) {
+        showToast("周期定时请至少选择一个星期")
+        return
+      }
+      const probe = computeNextScheduledRefresh(formScheduledClock.trim(), formWeekdays, new Date())
+      if (probe === "—") {
+        showToast("请填写有效的触发时间（时:分）")
+        return
+      }
+    }
     setUnits((prev) =>
       prev.map((u) => {
         if (u.id !== editingId) return u
-        let nextRefresh = u.nextRefresh
         if (formRefreshMode === "scheduled") {
-          nextRefresh = datetimeLocalToNextRefresh(formScheduledAt)
-        } else {
-          nextRefresh = computeNextRefreshFromInterval(intervalSeconds)
+          const scheduledClock = formScheduledClock.trim()
+          const scheduledWeekdays = [...formWeekdays]
+          const nextRefresh = computeNextScheduledRefresh(scheduledClock, scheduledWeekdays, new Date())
+          return {
+            ...u,
+            refreshMode: "scheduled",
+            scheduledClock,
+            scheduledWeekdays,
+            nextRefresh,
+          }
         }
+        const intervalSeconds = formToIntervalSeconds(formIntervalValue, formIntervalUnit)
         return {
           ...u,
-          name,
-          description,
-          refreshMode: formRefreshMode,
+          refreshMode: "interval",
           intervalSeconds,
-          nextRefresh,
+          nextRefresh: computeNextRefreshFromInterval(intervalSeconds),
         }
       })
     )
@@ -545,7 +583,7 @@ export default function App() {
         <DialogContent
           className={dialogShell("max-h-[min(92dvh,720px)] w-[calc(100vw-1.5rem)] max-w-2xl sm:max-w-2xl")}
         >
-          <DialogHeader className="border-b border-slate-100 px-6 pb-3.5 pt-5 pr-14 text-left">
+          <DialogHeader className="border-b border-slate-200/45 px-6 pb-3.5 pt-5 pr-14 text-left">
             <DialogTitle className="text-[17px] font-semibold tracking-tight text-slate-900">画框设置</DialogTitle>
           </DialogHeader>
 
@@ -669,18 +707,18 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-2 border-t border-slate-200/80 bg-slate-50/90 px-6 py-3.5">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
             <Button
               type="button"
-              variant="outline"
-              className="flex-1 rounded-xl border-slate-200 bg-white"
+              variant="ghost"
+              className="rounded-[length:var(--radius-md)] px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
               onClick={() => setFrameDialogOpen(false)}
             >
               取消
             </Button>
             <Button
               type="button"
-              className="flex-1 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+              className="rounded-[length:var(--radius-md)] bg-[#0071e3] px-5 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
               onClick={commitFrameDialog}
             >
               保存
@@ -696,102 +734,183 @@ export default function App() {
         }}
       >
         <DialogContent
-          className={dialogShell("max-h-[min(92dvh,720px)] w-[calc(100vw-1.5rem)] max-w-xl sm:max-w-xl")}
+          ref={editDialogContentRef}
+          className={dialogShell(
+            /* 勿加 relative：会覆盖 fixed；勿加 overflow-visible：底栏直角会露出圆角外（右下角发灰） */
+            "max-h-[min(92dvh,720px)] w-[calc(100vw-1.5rem)] max-w-xl sm:max-w-xl"
+          )}
         >
-          <DialogHeader className="border-b border-slate-100 px-6 pb-3.5 pt-5 pr-14 text-left">
-            <DialogTitle className="text-[17px] font-semibold tracking-tight text-slate-900">编辑渲染时间</DialogTitle>
+          <DialogHeader className="border-b border-slate-200/45 px-6 pb-3.5 pt-5 pr-14 text-left">
+            <DialogTitle
+              className="truncate text-left text-[17px] font-semibold tracking-tight text-slate-900"
+              title={editingUnit?.name}
+            >
+              {editingUnit?.name ?? "—"}
+            </DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[min(58dvh,520px)] overflow-y-auto px-6 py-4">
-            <div className="space-y-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="f-name" className="text-xs font-medium text-slate-500">
-                  节点名称
-                </Label>
-                <Input
-                  id="f-name"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="例如：早上天气"
-                  className="h-10 rounded-xl text-[13px]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="f-desc" className="text-xs font-medium text-slate-500">
-                  简要描述
-                </Label>
-                <textarea
-                  id="f-desc"
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  rows={3}
-                  maxLength={120}
-                  placeholder="用途、场景或数据来源（建议 20–40 字）"
-                  className="flex w-full resize-none rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-                />
-              </div>
+          <div
+            ref={editDialogScrollRef}
+            className="max-h-[min(58dvh,560px)] overflow-y-auto px-6 py-4"
+          >
+            {/* 固定最小高度 ≈「周期定时」面板，避免切换 tab 时整窗高度跳变 */}
+            <div className="min-h-[17rem] transition-[min-height] duration-300 ease-out">
+              <div className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="f-refresh-mode" className="text-xs font-medium text-slate-500">
-                  更新时间
-                </Label>
-                <select
-                  id="f-refresh-mode"
-                  value={formRefreshMode}
-                  onChange={(e) => setFormRefreshMode(e.target.value as UnitRefreshMode)}
-                  className="flex h-10 w-full rounded-xl border border-slate-200/90 bg-white px-3 text-[13px] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                <span className={editDialogLabelClass}>更新方式</span>
+                <div
+                  className="grid grid-cols-2 gap-1 rounded-full bg-slate-100/90 p-1"
+                  role="group"
+                  aria-label="更新方式"
                 >
-                  <option value="interval">间隔更新</option>
-                  <option value="scheduled">定时更新</option>
-                </select>
-                {formRefreshMode === "interval" ? (
-                  <div className="space-y-1.5 pt-1">
-                    <Label htmlFor="f-interval" className="text-xs text-slate-500">
-                      间隔（秒）
-                    </Label>
+                  <button
+                    type="button"
+                    aria-pressed={formRefreshMode === "interval"}
+                    onClick={() => setFormRefreshMode("interval")}
+                    className={cn(
+                      "rounded-full py-2.5 text-[13px] font-semibold transition-[color,background-color,box-shadow] duration-200",
+                      formRefreshMode === "interval"
+                        ? "bg-white text-slate-900 shadow-[0_1px_3px_rgb(0_0_0/0.06)]"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    频率循环
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={formRefreshMode === "scheduled"}
+                    onClick={() => setFormRefreshMode("scheduled")}
+                    className={cn(
+                      "rounded-full py-2.5 text-[13px] font-semibold transition-[color,background-color,box-shadow] duration-200",
+                      formRefreshMode === "scheduled"
+                        ? "bg-white text-slate-900 shadow-[0_1px_3px_rgb(0_0_0/0.06)]"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    周期定时
+                  </button>
+                </div>
+              </div>
+
+              {formRefreshMode === "interval" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="f-interval-value" className={editDialogLabelClass}>
+                    循环间隔
+                  </Label>
+                  <div className="flex gap-2">
                     <Input
-                      id="f-interval"
+                      id="f-interval-value"
                       type="number"
-                      min={30}
-                      step={30}
-                      value={formInterval}
-                      onChange={(e) => setFormInterval(Number(e.target.value))}
-                      className="h-10 rounded-xl font-mono text-[13px]"
+                      min={formIntervalUnit === "s" ? 30 : 1}
+                      step={1}
+                      value={formIntervalValue}
+                      onChange={(e) => setFormIntervalValue(Number(e.target.value))}
+                      className={cn(
+                        "h-10 min-w-0 flex-1 font-mono text-[13px] tabular-nums",
+                        editDialogFieldClass
+                      )}
+                    />
+                    <IntervalUnitSelect
+                      value={formIntervalUnit}
+                      onChange={setFormIntervalUnit}
+                      portalRef={editDialogContentRef}
+                      scrollContainerRef={editDialogScrollRef}
+                      aria-label="间隔单位"
+                      className={editDialogFieldClass}
                     />
                   </div>
-                ) : (
-                  <div className="space-y-1.5 pt-1">
-                    <Label htmlFor="f-scheduled" className="text-xs text-slate-500">
-                      下次刷新时间
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="f-clock" className={editDialogLabelClass}>
+                      触发时间
                     </Label>
-                    <Input
-                      id="f-scheduled"
-                      type="datetime-local"
-                      value={formScheduledAt}
-                      onChange={(e) => setFormScheduledAt(e.target.value)}
-                      className="h-10 rounded-xl font-mono text-[13px]"
+                    <ScheduleTimePicker
+                      id="f-clock"
+                      value={formScheduledClock}
+                      onChange={setFormScheduledClock}
+                      portalRef={editDialogContentRef}
+                      scrollContainerRef={editDialogScrollRef}
+                      className={editDialogFieldClass}
                     />
                   </div>
-                )}
+                  <div className="space-y-2">
+                    <span className={editDialogLabelClass}>重复</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.daily))}
+                      >
+                        每天
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.workweek))}
+                      >
+                        工作日
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.weekend))}
+                      >
+                        周末
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="重复星期">
+                      {WEEKDAY_ORDER_UI.map((d) => {
+                        const on = formWeekdays.includes(d)
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            aria-label={`周${weekdayShort(d)}`}
+                            aria-pressed={on}
+                            onClick={() => toggleWeekday(d)}
+                            className={cn(
+                              "flex h-9 min-w-9 items-center justify-center rounded-full border text-[12px] font-semibold transition-[color,background-color,border-color]",
+                              on
+                                ? "border-[#0071e3] bg-[#0071e3] text-white shadow-sm"
+                                : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                            )}
+                          >
+                            {weekdayShort(d)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2 border-t border-slate-200/80 bg-slate-50/90 px-6 py-3.5">
+          <div className="overflow-hidden rounded-b-[length:var(--radius-surface)]">
+            <div className="border-t border-slate-200/45 bg-slate-100/20 px-6 py-2.5">
+              <p className="text-[12px] leading-relaxed text-slate-500">{schedulePreviewText}</p>
+            </div>
+
+            <div className="relative z-40 flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
             <Button
               type="button"
-              variant="outline"
-              className="flex-1 rounded-xl border-slate-200 bg-white"
+              variant="ghost"
+              className="rounded-[length:var(--radius-md)] px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
               onClick={closeEditDialog}
             >
               取消
             </Button>
             <Button
               type="button"
-              className="flex-1 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+              className="rounded-[length:var(--radius-md)] bg-[#0071e3] px-5 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
               onClick={handleSave}
             >
               保存
             </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
