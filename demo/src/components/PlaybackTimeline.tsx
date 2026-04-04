@@ -252,7 +252,6 @@ export function PlaybackTimeline({
                       index !== rows.length - 1 && "border-b border-slate-200/[0.14]"
                     )}
                     style={{ gridTemplateColumns: TIMELINE_GRID_COLS }}
-                    title={`${datePart} ${relHint} ${clock} · ${row.unitName}`}
                   >
                     <time
                       dateTime={iso}
@@ -309,19 +308,7 @@ export function PlaybackTimeline({
                       </span>
                     </time>
                     <div className="relative z-[2] flex w-full items-center justify-center self-stretch bg-transparent">
-                      <span
-                        className={cn("relative z-[1]", dotClass(kind, row.ok))}
-                        title={
-                          kind === "playing"
-                            ? "正在展示"
-                            : kind === "upcoming"
-                              ? "后续播放（时间上晚于当前上墙画面）"
-                              : row.ok
-                                ? "已播放"
-                                : "已结束（失败）"
-                        }
-                        aria-hidden
-                      />
+                      <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
                     </div>
                     <span
                       className={cn(

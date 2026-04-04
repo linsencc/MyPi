@@ -692,14 +692,21 @@ body {
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
-  padding: 0.6rem 1.35rem;
-  background: var(--sage-deep);
+  padding: 0.65rem 1.4rem;
+  background: color-mix(in srgb, var(--sage-deep) 92%, transparent);
   color: #fffcf8;
   font-size: 0.8125rem;
   font-weight: 500;
-  border-radius: var(--radius-pill);
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  border-radius: calc(var(--radius-pill, 999px) * 0.92);
+  border: 1px solid rgb(255 252 248 / 0.12);
   z-index: 80;
-  box-shadow: var(--shadow-lift);
+  box-shadow:
+    var(--shadow-lift),
+    0 0 0 1px rgb(0 0 0 / 0.06) inset;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   max-width: min(90vw, 360px);
   text-align: center;
 }

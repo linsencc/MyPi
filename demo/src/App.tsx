@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { type CSSProperties, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 
+import { AppToast } from "@/components/AppToast"
 import { IntervalUnitSelect } from "@/components/IntervalUnitSelect"
 import { ScheduleTimePicker } from "@/components/ScheduleTimePicker"
 import { PlaybackTimeline } from "@/components/PlaybackTimeline"
@@ -19,6 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -419,6 +426,7 @@ export default function App() {
   }
 
   return (
+    <TooltipProvider delayDuration={280} skipDelayDuration={200}>
     <div className="min-h-screen px-4 pb-24 pt-8 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-4xl space-y-10">
         {/* 顶部：标题 + 画框配置 */}
@@ -427,17 +435,21 @@ export default function App() {
             壁上此刻
           </h1>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-full text-slate-600 transition-[color,background-color,transform] hover:bg-slate-200/55 hover:text-slate-800 active:scale-[0.96] focus-visible:ring-slate-400/45 [&_svg]:!h-5 [&_svg]:!w-5"
-              onClick={openFrameDialog}
-              aria-label="画框设置"
-              title="画框设置"
-            >
-              <Settings2 strokeWidth={1.5} aria-hidden />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 rounded-full text-slate-600 transition-[color,background-color,transform] hover:bg-slate-200/55 hover:text-slate-800 active:scale-[0.96] focus-visible:ring-slate-400/45 [&_svg]:!h-5 [&_svg]:!w-5"
+                  onClick={openFrameDialog}
+                  aria-label="画框设置"
+                >
+                  <Settings2 strokeWidth={1.5} aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">画框设置</TooltipContent>
+            </Tooltip>
           </div>
         </header>
 
@@ -536,40 +548,52 @@ export default function App() {
                   </div>
 
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-end gap-1.5 px-2.5 pb-2 pt-1 sm:gap-2 sm:px-3 sm:pb-2.5 sm:pt-1.5">
-                    <div
-                      className="min-w-0"
-                      title={u.description ? `${u.name}\n${u.description}` : u.name}
-                    >
-                      <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[13px]">
-                        {u.name}
-                      </h3>
-                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="min-w-0 cursor-default">
+                          <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[13px]">
+                            {u.name}
+                          </h3>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[15rem] whitespace-pre-line">
+                        {u.description ? `${u.name}\n${u.description}` : u.name}
+                      </TooltipContent>
+                    </Tooltip>
 
                     <div className="flex shrink-0 items-center justify-end gap-3 pt-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
-                        disabled={rowLocked}
-                        title="立即执行渲染并优先上墙"
-                        aria-label={`立即渲染「${u.name}」`}
-                        onClick={() => runRenderNow(u)}
-                      >
-                        <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
-                        disabled={rowLocked}
-                        title="编辑间隔或定时刷新"
-                        aria-label={`编辑渲染时间「${u.name}」`}
-                        onClick={() => openEdit(u.id)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
+                            disabled={rowLocked}
+                            aria-label={`立即渲染并优先上墙「${u.name}」`}
+                            onClick={() => runRenderNow(u)}
+                          >
+                            <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">立即渲染</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-full border border-white/50 bg-white/45 text-slate-400/55 shadow-[0_1px_2px_rgb(15_23_42/0.05)] backdrop-blur-md transition-[color,background-color,box-shadow] hover:bg-white/70 hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.07)] disabled:opacity-50"
+                            disabled={rowLocked}
+                            aria-label={`编辑间隔或定时刷新「${u.name}」`}
+                            onClick={() => openEdit(u.id)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">编辑定时</TooltipContent>
+                      </Tooltip>
                     </div>
                   </div>
                 </li>
@@ -649,14 +673,20 @@ export default function App() {
                           <Label htmlFor={`ink-slider-${spec.key}`} className="text-[13px] font-semibold text-slate-800">
                             {spec.label}
                           </Label>
-                          <button
-                            type="button"
-                            className="inline-flex shrink-0 rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
-                            title={techTip}
-                            aria-label={`${spec.label}：技术说明与默认值`}
-                          >
-                            <CircleHelp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex shrink-0 rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
+                                aria-label={`${spec.label}：技术说明与默认值`}
+                              >
+                                <CircleHelp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[16rem]">
+                              {techTip}
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                         <div className="flex items-center gap-3">
                           <input
@@ -687,15 +717,21 @@ export default function App() {
                                 {v.toFixed(2)}
                               </span>
                             ) : (
-                              <button
-                                type="button"
-                                title={`点击恢复默认 ${spec.defaultValue.toFixed(2)}`}
-                                aria-label={`${spec.label} 恢复为默认 ${spec.defaultValue.toFixed(2)}`}
-                                className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[13px] text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-                                onClick={() => resetSlider(spec.key)}
-                              >
-                                {v.toFixed(2)}
-                              </button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label={`${spec.label} 恢复为默认 ${spec.defaultValue.toFixed(2)}`}
+                                    className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[13px] text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                                    onClick={() => resetSlider(spec.key)}
+                                  >
+                                    {v.toFixed(2)}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                  点击恢复默认 {spec.defaultValue.toFixed(2)}
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </div>
                         </div>
@@ -740,22 +776,24 @@ export default function App() {
             "max-h-[min(92dvh,720px)] w-[calc(100vw-1.5rem)] max-w-xl sm:max-w-xl"
           )}
         >
-          <DialogHeader className="border-b border-slate-200/45 px-6 pb-3.5 pt-5 pr-14 text-left">
-            <DialogTitle
-              className="truncate text-left text-[17px] font-semibold tracking-tight text-slate-900"
-              title={editingUnit?.name}
-            >
-              {editingUnit?.name ?? "—"}
-            </DialogTitle>
+          <DialogHeader className="border-b border-slate-200/45 px-6 pb-3 pt-4 pr-14 text-left">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTitle className="truncate text-left text-[17px] font-semibold tracking-tight text-slate-900">
+                  {editingUnit?.name ?? "—"}
+                </DialogTitle>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[min(20rem,calc(100vw-3rem))] break-words">
+                {editingUnit?.name ?? "—"}
+              </TooltipContent>
+            </Tooltip>
           </DialogHeader>
 
           <div
             ref={editDialogScrollRef}
-            className="max-h-[min(58dvh,560px)] overflow-y-auto px-6 py-4"
+            className="max-h-[min(58dvh,560px)] overflow-y-auto px-6 py-3"
           >
-            {/* 固定最小高度 ≈「周期定时」面板，避免切换 tab 时整窗高度跳变 */}
-            <div className="min-h-[17rem] transition-[min-height] duration-300 ease-out">
-              <div className="space-y-5">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <span className={editDialogLabelClass}>更新方式</span>
                 <div
@@ -792,99 +830,116 @@ export default function App() {
                 </div>
               </div>
 
-              {formRefreshMode === "interval" ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor="f-interval-value" className={editDialogLabelClass}>
-                    循环间隔
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="f-interval-value"
-                      type="number"
-                      min={formIntervalUnit === "s" ? 30 : 1}
-                      step={1}
-                      value={formIntervalValue}
-                      onChange={(e) => setFormIntervalValue(Number(e.target.value))}
-                      className={cn(
-                        "h-10 min-w-0 flex-1 font-mono text-[13px] tabular-nums",
-                        editDialogFieldClass
-                      )}
-                    />
-                    <IntervalUnitSelect
-                      value={formIntervalUnit}
-                      onChange={setFormIntervalUnit}
-                      portalRef={editDialogContentRef}
-                      scrollContainerRef={editDialogScrollRef}
-                      aria-label="间隔单位"
-                      className={editDialogFieldClass}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
+              {/* 同格叠放：隐藏层仍占位，高度取较高面板，切换不跳变 */}
+              <div className="grid [&>*]:col-start-1 [&>*]:row-start-1 [&>*]:min-w-0">
+                <div
+                  className={cn(
+                    formRefreshMode === "interval"
+                      ? "relative z-10"
+                      : "invisible pointer-events-none"
+                  )}
+                  aria-hidden={formRefreshMode !== "interval"}
+                  inert={formRefreshMode !== "interval" || undefined}
+                >
                   <div className="space-y-1.5">
-                    <Label htmlFor="f-clock" className={editDialogLabelClass}>
-                      触发时间
+                    <Label htmlFor="f-interval-value" className={editDialogLabelClass}>
+                      循环间隔
                     </Label>
-                    <ScheduleTimePicker
-                      id="f-clock"
-                      value={formScheduledClock}
-                      onChange={setFormScheduledClock}
-                      portalRef={editDialogContentRef}
-                      scrollContainerRef={editDialogScrollRef}
-                      className={editDialogFieldClass}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <span className={editDialogLabelClass}>重复</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
-                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.daily))}
-                      >
-                        每天
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
-                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.workweek))}
-                      >
-                        工作日
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
-                        onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.weekend))}
-                      >
-                        周末
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="重复星期">
-                      {WEEKDAY_ORDER_UI.map((d) => {
-                        const on = formWeekdays.includes(d)
-                        return (
-                          <button
-                            key={d}
-                            type="button"
-                            aria-label={`周${weekdayShort(d)}`}
-                            aria-pressed={on}
-                            onClick={() => toggleWeekday(d)}
-                            className={cn(
-                              "flex h-9 min-w-9 items-center justify-center rounded-full border text-[12px] font-semibold transition-[color,background-color,border-color]",
-                              on
-                                ? "border-[#0071e3] bg-[#0071e3] text-white shadow-sm"
-                                : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                            )}
-                          >
-                            {weekdayShort(d)}
-                          </button>
-                        )
-                      })}
+                    <div className="flex gap-2">
+                      <Input
+                        id="f-interval-value"
+                        type="number"
+                        min={formIntervalUnit === "s" ? 30 : 1}
+                        step={1}
+                        value={formIntervalValue}
+                        onChange={(e) => setFormIntervalValue(Number(e.target.value))}
+                        className={cn(
+                          "h-10 min-w-0 flex-1 font-mono text-[13px] tabular-nums",
+                          editDialogFieldClass
+                        )}
+                      />
+                      <IntervalUnitSelect
+                        value={formIntervalUnit}
+                        onChange={setFormIntervalUnit}
+                        portalRef={editDialogContentRef}
+                        scrollContainerRef={editDialogScrollRef}
+                        aria-label="间隔单位"
+                        className={editDialogFieldClass}
+                      />
                     </div>
                   </div>
                 </div>
-              )}
+                <div
+                  className={cn(
+                    formRefreshMode === "scheduled"
+                      ? "relative z-10"
+                      : "invisible pointer-events-none"
+                  )}
+                  aria-hidden={formRefreshMode !== "scheduled"}
+                  inert={formRefreshMode !== "scheduled" || undefined}
+                >
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="f-clock" className={editDialogLabelClass}>
+                        触发时间
+                      </Label>
+                      <ScheduleTimePicker
+                        id="f-clock"
+                        value={formScheduledClock}
+                        onChange={setFormScheduledClock}
+                        className={editDialogFieldClass}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <span className={editDialogLabelClass}>重复</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                          onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.daily))}
+                        >
+                          每天
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                          onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.workweek))}
+                        >
+                          工作日
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200/70 bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                          onClick={() => setFormWeekdays(normalizeWeekdaysSelection(WEEKDAY_PRESETS.weekend))}
+                        >
+                          周末
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="重复星期">
+                        {WEEKDAY_ORDER_UI.map((d) => {
+                          const on = formWeekdays.includes(d)
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              aria-label={`周${weekdayShort(d)}`}
+                              aria-pressed={on}
+                              onClick={() => toggleWeekday(d)}
+                              className={cn(
+                                "flex h-9 min-w-9 items-center justify-center rounded-full border text-[12px] font-semibold transition-[color,background-color,border-color]",
+                                on
+                                  ? "border-[#0071e3] bg-[#0071e3] text-white shadow-sm"
+                                  : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                              )}
+                            >
+                              {weekdayShort(d)}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -915,14 +970,8 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {toast ? (
-        <div
-          className="fixed bottom-8 left-1/2 z-[100] max-w-sm -translate-x-1/2 rounded-full border border-white/12 bg-[#1d1d1f]/95 px-5 py-2.5 text-center text-[13px] font-medium text-white shadow-lg backdrop-blur-xl"
-          role="status"
-        >
-          {toast}
-        </div>
-      ) : null}
+      <AppToast message={toast} />
     </div>
+    </TooltipProvider>
   )
 }
