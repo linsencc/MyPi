@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 
 import { type RunLog, type Unit } from "@/data/demo-data"
 import { cn } from "@/lib/utils"
@@ -105,6 +113,109 @@ const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
 /** 与中间列圆点对齐：左列 8rem + 中列一半 0.625rem（相对已含 pl-4 的内容区，勿再加 1rem） */
 const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
 
+const TimelineRowItem = memo(function TimelineRowItem({
+  row,
+  index,
+  totalRows,
+  nowMs,
+  kind,
+}: {
+  row: Row
+  index: number
+  totalRows: number
+  nowMs: number
+  kind: DotKind
+}) {
+  const iso = new Date(row.endMs).toISOString()
+  const datePart = formatDatePart(row.endMs, nowMs)
+  const relHint = formatRelativeHint(row.endMs, nowMs)
+  const clock = formatClock(row.endMs)
+  const isPast = kind === "past"
+
+  return (
+    <li
+      className={cn(
+        "grid items-center gap-0 py-1.5",
+        TIMELINE_ROW_MIN_H,
+        "transition-[background-color,opacity] duration-150 hover:bg-slate-200/[0.09]",
+        isPast && "opacity-[0.93]",
+        index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
+      )}
+      style={{ gridTemplateColumns: TIMELINE_GRID_COLS }}
+    >
+      <time
+        dateTime={iso}
+        className={cn(
+          "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
+          "min-w-0 pr-2 text-[11px] leading-snug tracking-tight sm:text-xs",
+          kind === "playing"
+            ? "text-slate-600"
+            : kind === "upcoming"
+              ? "text-slate-400"
+              : "text-slate-400/75"
+        )}
+      >
+        <span className="leading-tight">
+          {datePart}
+          <span
+            className={cn(
+              kind === "playing"
+                ? "text-slate-500"
+                : kind === "upcoming"
+                  ? "text-slate-400/85"
+                  : "text-slate-400/65"
+            )}
+          >
+            {" "}
+            {relHint}
+          </span>
+        </span>
+        <span className="inline-flex items-baseline gap-x-1 leading-none">
+          <span
+            className={cn(
+              kind === "playing"
+                ? "text-slate-300"
+                : kind === "upcoming"
+                  ? "text-slate-300/70"
+                  : "text-slate-300/55"
+            )}
+            aria-hidden
+          >
+            ·
+          </span>
+          <span
+            className={cn(
+              "font-mono tabular-nums",
+              kind === "playing"
+                ? "text-slate-800"
+                : kind === "upcoming"
+                  ? "text-slate-500"
+                  : "text-slate-500/75"
+            )}
+          >
+            {clock}
+          </span>
+        </span>
+      </time>
+      <div className="relative z-[2] flex w-full items-center justify-center self-stretch bg-transparent">
+        <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
+      </div>
+      <span
+        className={cn(
+          "min-w-0 truncate pl-2 text-[13px]",
+          kind === "playing"
+            ? "font-medium text-slate-900"
+            : kind === "upcoming"
+              ? "text-slate-600"
+              : "text-slate-500/95"
+        )}
+      >
+        {row.unitName}
+      </span>
+    </li>
+  )
+})
+
 export function PlaybackTimeline({
   units,
   currentOnWall,
@@ -114,8 +225,6 @@ export function PlaybackTimeline({
   currentOnWall: { id: string; name: string } | null
   runLogs: Record<string, RunLog[]>
 }) {
-  const nowMs = Date.now()
-
   const rows = useMemo(() => {
     const list: Row[] = []
     for (const u of units) {
@@ -136,6 +245,8 @@ export function PlaybackTimeline({
     list.sort((a, b) => b.endMs - a.endMs)
     return list.slice(0, MAX_EVENTS)
   }, [units, runLogs])
+
+  const nowMs = useMemo(() => Date.now(), [rows])
 
   /** 当前上墙节点在列表中最近一条记录（优先成功）作为「正在展示」与时间锚点 */
   const playingAnchor = useMemo(() => {
@@ -304,97 +415,16 @@ export function PlaybackTimeline({
                 }}
               />
               <ol className={cn("relative z-[1] m-0 list-none pb-1", TIMELINE_SIX_ROWS_MIN_H)}>
-              {rows.map((row, index) => {
-                const iso = new Date(row.endMs).toISOString()
-                const datePart = formatDatePart(row.endMs, nowMs)
-                const relHint = formatRelativeHint(row.endMs, nowMs)
-                const clock = formatClock(row.endMs)
-                const kind = dotKindForRow(row)
-                const isPast = kind === "past"
-                return (
-                  <li
+                {rows.map((row, index) => (
+                  <TimelineRowItem
                     key={row.key}
-                    className={cn(
-                      "grid items-center gap-0 py-1.5",
-                      TIMELINE_ROW_MIN_H,
-                      "transition-[background-color,opacity] duration-150 hover:bg-slate-200/[0.09]",
-                      isPast && "opacity-[0.93]",
-                      index !== rows.length - 1 && "border-b border-slate-200/[0.14]"
-                    )}
-                    style={{ gridTemplateColumns: TIMELINE_GRID_COLS }}
-                  >
-                    <time
-                      dateTime={iso}
-                      className={cn(
-                        "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
-                        "min-w-0 pr-2 text-[11px] leading-snug tracking-tight sm:text-xs",
-                        kind === "playing"
-                          ? "text-slate-600"
-                          : kind === "upcoming"
-                            ? "text-slate-400"
-                            : "text-slate-400/75"
-                      )}
-                    >
-                      <span className="leading-tight">
-                        {datePart}
-                        <span
-                          className={cn(
-                            kind === "playing"
-                              ? "text-slate-500"
-                              : kind === "upcoming"
-                                ? "text-slate-400/85"
-                                : "text-slate-400/65"
-                          )}
-                        >
-                          {" "}
-                          {relHint}
-                        </span>
-                      </span>
-                      <span className="inline-flex items-baseline gap-x-1 leading-none">
-                        <span
-                          className={cn(
-                            kind === "playing"
-                              ? "text-slate-300"
-                              : kind === "upcoming"
-                                ? "text-slate-300/70"
-                                : "text-slate-300/55"
-                          )}
-                          aria-hidden
-                        >
-                          ·
-                        </span>
-                        <span
-                          className={cn(
-                            "font-mono tabular-nums",
-                            kind === "playing"
-                              ? "text-slate-800"
-                              : kind === "upcoming"
-                                ? "text-slate-500"
-                                : "text-slate-500/75"
-                          )}
-                        >
-                          {clock}
-                        </span>
-                      </span>
-                    </time>
-                    <div className="relative z-[2] flex w-full items-center justify-center self-stretch bg-transparent">
-                      <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
-                    </div>
-                    <span
-                      className={cn(
-                        "min-w-0 truncate pl-2 text-[13px]",
-                        kind === "playing"
-                          ? "font-medium text-slate-900"
-                          : kind === "upcoming"
-                            ? "text-slate-600"
-                            : "text-slate-500/95"
-                      )}
-                    >
-                      {row.unitName}
-                    </span>
-                  </li>
-                )
-              })}
+                    row={row}
+                    index={index}
+                    totalRows={rows.length}
+                    nowMs={nowMs}
+                    kind={dotKindForRow(row)}
+                  />
+                ))}
               </ol>
             </div>
           </div>
