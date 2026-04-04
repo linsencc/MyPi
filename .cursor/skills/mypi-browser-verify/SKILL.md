@@ -25,6 +25,7 @@ description: >-
 
 ## 验证前准备
 
+- **清环境由代理自己做**：若 5050 多实例或端口冲突，先查 PID 并结束多余监听进程再起服务，勿把 `netstat`/`taskkill` 甩给用户（见 `.cursor/skills/mypi-agent-execute/SKILL.md`）。
 - 在终端于 **`server/`** 启动后端（如 `PYTHONPATH=. python _dev_serve.py` 或单进程、**避免** `FLASK_DEBUG` 父子双进程导致 `wall/state` 不一致）与 **`web` 的 Vite dev**（默认 `http://127.0.0.1:5173`，`/api` 代理到 5050）。
 - 调用 MCP 工具前：**先读对应工具的 schema**（项目 `mcps/cursor-ide-browser/tools/*.json`），再按参数调用。
 

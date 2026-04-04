@@ -51,6 +51,16 @@ def create_app() -> Flask:
 
 
 if __name__ == "__main__":
-    app = create_app()
     port = int(os.environ.get("PORT", "5050"))
-    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")
+    host = os.environ.get("MYPI_BIND", "0.0.0.0")
+    debug = os.environ.get("FLASK_DEBUG") == "1"
+    # Stat reloader re-executes this module; a pre-bind would see the child already on the port.
+    if (
+        not debug
+        and os.environ.get("MYPI_SKIP_PORT_CHECK", "").strip() not in ("1", "true", "yes")
+    ):
+        from dev_port_check import ensure_dev_port_free
+
+        ensure_dev_port_free(host, port)
+    app = create_app()
+    app.run(host=host, port=port, debug=debug)

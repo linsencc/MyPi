@@ -23,7 +23,8 @@ def main() -> int:
 
     r = c.get("/api/v1/templates")
     t = j(r)
-    if not t or not any(x.get("templateId") == "daily_motto" for x in t):
+    tids = {x.get("templateId") for x in (t or [])}
+    if not t or "daily_motto" not in tids or "schedule_stamp" not in tids:
         print("FAIL templates", r.status_code, t)
         fails += 1
     else:
@@ -72,6 +73,29 @@ def main() -> int:
                 fails += 1
             else:
                 print("OK show-now embeds preview URL")
+
+        stamp_sid = next(
+            (s["id"] for s in (cfg.get("scenes") or []) if s.get("templateId") == "schedule_stamp"),
+            None,
+        )
+        if stamp_sid:
+            r = c.post(f"/api/v1/scenes/{stamp_sid}/show-now")
+            sn2 = j(r)
+            if not sn2 or not sn2.get("ok"):
+                print("FAIL schedule_stamp show-now", r.status_code, r.data[:300])
+                fails += 1
+            else:
+                p2 = (sn2.get("wallState") or {}).get("currentPreviewUrl")
+                if not p2 or "schedule_stamp" not in str(p2):
+                    print("FAIL schedule_stamp preview path", p2)
+                    fails += 1
+                else:
+                    r = c.get(p2)
+                    if r.status_code != 200 or r.data[:8] != b"\x89PNG\r\n\x1a\n":
+                        print("FAIL schedule_stamp PNG", r.status_code, p2)
+                        fails += 1
+                    else:
+                        print("OK schedule_stamp show-now PNG")
 
         r = c.get("/api/v1/wall/state")
         ws = j(r)
