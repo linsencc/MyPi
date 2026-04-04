@@ -429,52 +429,29 @@ export default function App() {
                   {previewFrame.orientation === "landscape" ? (
                     <div
                       className={cn(
-                        "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-900/[0.04]",
-                        "shadow-[0_0_0_1px_rgb(15_23_42/0.05),0_26px_70px_-40px_rgb(15_23_42/0.16)] ring-1 ring-slate-900/[0.055]"
+                        "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45",
+                        /* 单层圆角裁剪：避免 ring + 1px shadow + 子层 inset 在四角叠成双细线 */
+                        "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
                       )}
                     >
-                      {/* 物理画框：细 bezel + 内阴影（电子墨水 / 相框嵌入感） */}
-                      <div className="absolute inset-0 p-[3px]">
-                        <div
-                          className={cn(
-                            "relative h-full w-full rounded-[10px] bg-[linear-gradient(160deg,rgb(100_116_139)_0%,rgb(71_85_105)_48%,rgb(100_116_139)_100%)]",
-                            "shadow-[inset_0_2px_3px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.18),inset_0_0_0_1px_rgb(255_255_255/0.12),inset_0_-2px_3px_rgb(0_0_0/0.08)]"
-                          )}
-                        >
-                          <div className="absolute inset-[3px] overflow-hidden rounded-[7px] bg-slate-800 shadow-[inset_0_0_0_1px_rgb(0_0_0/0.15),inset_0_6px_14px_rgb(0_0_0/0.12),inset_0_1px_0_rgb(255_255_255/0.06)]">
-                            <PreviewFrame
-                              src={previewSrc(nowOnWall)}
-                              alt={`${nowOnWall.name} 当前画面预览`}
-                              imageFilter={previewFilter}
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <PreviewFrame
+                        src={previewSrc(nowOnWall)}
+                        alt={`${nowOnWall.name} 当前画面预览`}
+                        imageFilter={previewFilter}
+                      />
                     </div>
                   ) : (
                     <div
                       className={cn(
-                        "relative aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800 sm:h-[min(44vh,360px)]",
-                        "shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_32px_80px_-36px_rgb(0_0_0/0.38)] ring-1 ring-white/14"
+                        "relative aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 sm:h-[min(44vh,360px)]",
+                        "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
                       )}
                     >
-                      {/* 物理画框：细 bezel + 内阴影（电子墨水 / 相框嵌入感） */}
-                      <div className="absolute inset-0 p-[3px]">
-                        <div
-                          className={cn(
-                            "relative h-full w-full rounded-[10px] bg-[linear-gradient(165deg,rgb(100_116_139)_0%,rgb(71_85_105)_50%,rgb(100_116_139)_100%)]",
-                            "shadow-[inset_0_2px_3px_rgb(0_0_0/0.14),inset_0_1px_0_rgb(255_255_255/0.18),inset_0_0_0_1px_rgb(255_255_255/0.12),inset_0_-2px_3px_rgb(0_0_0/0.08)]"
-                          )}
-                        >
-                          <div className="absolute inset-[3px] overflow-hidden rounded-[7px] bg-slate-800 shadow-[inset_0_0_0_1px_rgb(0_0_0/0.15),inset_0_6px_14px_rgb(0_0_0/0.12),inset_0_1px_0_rgb(255_255_255/0.06)]">
-                            <PreviewFrame
-                              src={previewSrc(nowOnWall)}
-                              alt={`${nowOnWall.name} 当前画面预览`}
-                              imageFilter={previewFilter}
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <PreviewFrame
+                        src={previewSrc(nowOnWall)}
+                        alt={`${nowOnWall.name} 当前画面预览`}
+                        imageFilter={previewFilter}
+                      />
                     </div>
                   )}
                 </div>

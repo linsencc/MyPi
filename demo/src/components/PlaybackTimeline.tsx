@@ -184,7 +184,7 @@ export function PlaybackTimeline({
     return (
       <section className="space-y-3" aria-labelledby="playback-timeline-heading">
         <h2 id="playback-timeline-heading" className="text-lg font-semibold tracking-tight text-slate-900">
-          播放时间轴
+          时间轴
         </h2>
         <p className="py-6 text-center text-[13px] leading-relaxed text-slate-500">
           暂无记录。启用节点并渲染后会显示在这里。
@@ -196,14 +196,15 @@ export function PlaybackTimeline({
   return (
     <section className="space-y-3" aria-labelledby="playback-timeline-heading">
       <h2 id="playback-timeline-heading" className="text-lg font-semibold tracking-tight text-slate-900">
-        播放时间轴
+        时间轴
       </h2>
 
       <div className="relative">
         {showEmptyHistory ? (
           <p className="py-4 text-center text-[12px] text-slate-400">暂无历史记录</p>
         ) : (
-          <div className="relative max-h-[min(280px,45vh)] overflow-y-auto overscroll-y-contain pl-4 pr-3 [scrollbar-gutter:stable]">
+          <div className="relative max-h-[min(280px,45vh)] overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [scrollbar-gutter:stable]">
+            {/* 上内边距：播放节点 box-shadow 会被 overflow 裁切 */}
             {/* 贯穿列表的单条竖线：最底层，圆点叠在上方 */}
             <div
               aria-hidden
