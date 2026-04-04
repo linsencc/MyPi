@@ -7,7 +7,7 @@ import {
   Play,
   Settings2,
 } from "lucide-react"
-import { type CSSProperties, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AppToast } from "@/components/AppToast"
 import { IntervalUnitSelect } from "@/components/IntervalUnitSelect"
@@ -229,12 +229,10 @@ export default function App() {
     return bust != null ? `${base}?r=${bust}` : base
   }
 
-  const previewFrame = frameDialogOpen ? frameDraft : frameConfig
-  /** 拖动滑块时延后更新首页预览滤镜，避免整页重绘与弹窗滚动条抖动 */
-  const previewImageSettingsDeferred = useDeferredValue(previewFrame.imageSettings)
+  /** 仅保存后更新首页预览，弹窗内调节不实时反映到背景画框 */
   const previewFilter = useMemo(
-    () => getPreviewImageFilter(previewImageSettingsDeferred),
-    [previewImageSettingsDeferred]
+    () => getPreviewImageFilter(frameConfig.imageSettings),
+    [frameConfig.imageSettings]
   )
 
   const openFrameDialog = useCallback(() => {
@@ -465,7 +463,7 @@ export default function App() {
                   aria-hidden
                   className={cn(
                     "pointer-events-none absolute inset-0",
-                    previewFrame.orientation === "portrait"
+                    frameConfig.orientation === "portrait"
                       ? "bg-[radial-gradient(ellipse_95%_72%_at_14%_0%,rgb(148_163_184/0.22),transparent_55%),radial-gradient(ellipse_65%_50%_at_88%_12%,rgb(100_116_139/0.12),transparent_48%),radial-gradient(ellipse_50%_42%_at_48%_96%,rgb(71_85_105/0.08),transparent_52%),linear-gradient(to_bottom,rgb(203_213_225/0.38),rgb(148_163_184/0.09),transparent)]"
                       : "bg-[radial-gradient(ellipse_100%_78%_at_18%_0%,rgb(148_163_184/0.16),transparent_52%),radial-gradient(ellipse_72%_58%_at_90%_20%,rgb(148_163_184/0.1),transparent_46%),radial-gradient(ellipse_52%_44%_at_42%_98%,rgb(100_116_139/0.07),transparent_50%),linear-gradient(to_bottom,rgb(226_232_240/0.42),rgb(241_245_249/0.2),transparent)]"
                   )}
@@ -474,9 +472,9 @@ export default function App() {
                   aria-hidden
                   className="pointer-events-none absolute inset-0 bg-hero-noise opacity-[0.035] mix-blend-multiply [background-size:256px_256px]"
                 />
-                <div className="relative z-10 flex justify-center px-4 py-5 sm:px-6 sm:py-7">
+                <div className="relative z-10 flex justify-center px-2 py-3 sm:px-3 sm:py-4">
                 <div className="flex w-full max-w-[min(100%,980px)] justify-center">
-                  {previewFrame.orientation === "landscape" ? (
+                  {frameConfig.orientation === "landscape" ? (
                     <div
                       className={cn(
                         "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45",
@@ -622,6 +620,7 @@ export default function App() {
                 >
                   <button
                     type="button"
+                    aria-pressed={frameDraft.orientation === "landscape"}
                     onClick={() => setFrameDraft((d) => ({ ...d, orientation: "landscape" }))}
                     className={cn(
                       "rounded-full py-2.5 text-[13px] font-semibold transition-[color,background-color,box-shadow] duration-200",
@@ -634,6 +633,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
+                    aria-pressed={frameDraft.orientation === "portrait"}
                     onClick={() => setFrameDraft((d) => ({ ...d, orientation: "portrait" }))}
                     className={cn(
                       "rounded-full py-2.5 text-[13px] font-semibold transition-[color,background-color,box-shadow] duration-200",
@@ -648,20 +648,9 @@ export default function App() {
               </section>
 
               <section className="space-y-3 border-t border-slate-100 pt-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    水墨屏色彩校对
-                  </h3>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 shrink-0 px-2 text-[12px] text-slate-600 hover:text-slate-900"
-                    onClick={resetAllSliders}
-                  >
-                    全部恢复默认
-                  </Button>
-                </div>
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  水墨屏色彩校对
+                </h3>
                 <ul className="space-y-5">
                   {INKYPI_SLIDER_SPECS.map((spec) => {
                     const v = frameDraft.imageSettings[spec.key]
@@ -669,7 +658,7 @@ export default function App() {
                     const techTip = `${spec.hint} · 默认 ${spec.defaultValue.toFixed(2)}`
                     return (
                       <li key={spec.key} className="space-y-2">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <Label htmlFor={`ink-slider-${spec.key}`} className="text-[13px] font-semibold text-slate-800">
                             {spec.label}
                           </Label>
@@ -677,10 +666,10 @@ export default function App() {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="inline-flex shrink-0 rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
+                                className="inline-flex shrink-0 rounded-md text-slate-300 transition-colors hover:bg-slate-100/80 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
                                 aria-label={`${spec.label}：技术说明与默认值`}
                               >
-                                <CircleHelp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                                <CircleHelp className="h-3 w-3" strokeWidth={1.75} aria-hidden />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-[16rem]">
@@ -711,9 +700,9 @@ export default function App() {
                               } as CSSProperties
                             }
                           />
-                          <div className="flex w-12 shrink-0 items-center justify-end tabular-nums">
+                          <div className="flex min-w-[2.75rem] shrink-0 items-center justify-end tabular-nums">
                             {isDefault ? (
-                              <span className="w-full text-right font-mono text-[13px] text-slate-900">
+                              <span className="w-full text-right font-mono text-[12px] text-slate-500">
                                 {v.toFixed(2)}
                               </span>
                             ) : (
@@ -722,7 +711,7 @@ export default function App() {
                                   <button
                                     type="button"
                                     aria-label={`${spec.label} 恢复为默认 ${spec.defaultValue.toFixed(2)}`}
-                                    className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[13px] text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                                    className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
                                     onClick={() => resetSlider(spec.key)}
                                   >
                                     {v.toFixed(2)}
@@ -743,22 +732,32 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
             <Button
               type="button"
               variant="ghost"
-              className="rounded-[length:var(--radius-md)] px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
-              onClick={() => setFrameDialogOpen(false)}
+              className="h-9 rounded-lg px-2 text-[12px] font-medium text-slate-500 hover:bg-slate-200/40 hover:text-slate-800"
+              onClick={resetAllSliders}
             >
-              取消
+              全部恢复默认
             </Button>
-            <Button
-              type="button"
-              className="rounded-[length:var(--radius-md)] bg-[#0071e3] px-5 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-              onClick={commitFrameDialog}
-            >
-              保存
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-10 rounded-lg px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
+                onClick={() => setFrameDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                className="h-10 rounded-lg bg-[#0071e3] px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                onClick={commitFrameDialog}
+              >
+                保存
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -950,21 +949,21 @@ export default function App() {
             </div>
 
             <div className="relative z-40 flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
-            <Button
-              type="button"
-              variant="ghost"
-              className="rounded-[length:var(--radius-md)] px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
-              onClick={closeEditDialog}
-            >
-              取消
-            </Button>
-            <Button
-              type="button"
-              className="rounded-[length:var(--radius-md)] bg-[#0071e3] px-5 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-              onClick={handleSave}
-            >
-              保存
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-10 rounded-lg px-4 text-[13px] font-medium text-slate-600 hover:bg-slate-200/45 hover:text-slate-900"
+                onClick={closeEditDialog}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                className="h-10 rounded-lg bg-[#0071e3] px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                onClick={handleSave}
+              >
+                保存
+              </Button>
             </div>
           </div>
         </DialogContent>

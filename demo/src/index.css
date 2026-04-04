@@ -127,8 +127,9 @@
 /* 画框设置：自定义 range，圆角轨 + 已填进度色 + 拇指样式（减轻原生 accent 与布局抖动） */
 @layer components {
   .ink-range-slider {
-    --ink-fill: #1e293b;
-    --ink-track: rgb(226 232 240);
+    /* 已填：主题蓝；未填：略深的灰，保证与白底分界可辨 */
+    --ink-fill: #0071e3;
+    --ink-track: rgb(220 227 236);
 
     -webkit-appearance: none;
     appearance: none;
@@ -162,13 +163,17 @@
   .ink-range-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     box-sizing: border-box;
-    width: 18px;
-    height: 18px;
-    margin-top: -5.5px;
+    width: 16px;
+    height: 16px;
+    margin-top: -4.5px;
     border-radius: 9999px;
-    background: var(--ink-fill);
-    border: 2px solid white;
-    box-shadow: 0 1px 4px rgb(15 23 42 / 0.2);
+    /* 空心环 + 轻投影，避免黑色实心拇指的生硬感 */
+    background: #fff;
+    border: 2px solid rgb(0 113 227 / 0.45);
+    box-shadow:
+      0 0 0 1px rgb(15 23 42 / 0.06),
+      0 1px 3px rgb(15 23 42 / 0.08),
+      0 4px 12px rgb(15 23 42 / 0.1);
     cursor: grab;
   }
 
@@ -190,12 +195,15 @@
 
   .ink-range-slider::-moz-range-thumb {
     box-sizing: border-box;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 9999px;
-    background: var(--ink-fill);
-    border: 2px solid white;
-    box-shadow: 0 1px 4px rgb(15 23 42 / 0.2);
+    background: #fff;
+    border: 2px solid rgb(0 113 227 / 0.45);
+    box-shadow:
+      0 0 0 1px rgb(15 23 42 / 0.06),
+      0 1px 3px rgb(15 23 42 / 0.08),
+      0 4px 12px rgb(15 23 42 / 0.1);
     cursor: grab;
   }
 
