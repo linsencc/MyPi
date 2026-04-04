@@ -82,17 +82,13 @@
   font-family: var(--font-display);
 }
 
-/* 顶部画框展示区：极淡噪点叠层（配合 mesh 渐变用 mix-blend） */
-@utility bg-hero-noise {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-}
-
 @layer base {
   * {
     @apply border-border;
   }
+  /* auto：避免 smooth 滚动在 Chrome 上与合成/输入抢占主线程，体感更跟手 */
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
   body {
     @apply text-foreground antialiased;
@@ -108,29 +104,105 @@
       rgb(241 245 249 / 0.88) 100%
     );
   }
+  /*
+   * 全页轻微纹理：仅用 repeating-linear-gradient，无 SVG filter、无 mix-blend，
+   * 在 Chrome 上成本远低于 feTurbulence，同时保留一点纸感。
+   */
   body::after {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.055;
-    mix-blend-mode: multiply;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    opacity: 0.58;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 1px,
+        rgb(15 23 42 / 0.034) 1px,
+        rgb(15 23 42 / 0.034) 2px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 1px,
+        rgb(15 23 42 / 0.026) 1px,
+        rgb(15 23 42 / 0.026) 2px
+      ),
+      repeating-linear-gradient(
+        128deg,
+        transparent 0,
+        transparent 3px,
+        rgb(15 23 42 / 0.012) 3px,
+        rgb(15 23 42 / 0.012) 4px
+      );
+    background-size:
+      4px 4px,
+      4px 4px,
+      8px 8px;
+  }
+  @media (prefers-contrast: more) {
+    body::after {
+      opacity: 0;
+    }
   }
   #root {
     position: relative;
     z-index: 1;
   }
-  /* 全站图片不可拖成「另存/拖出」幽灵图（配合 img draggable=false） */
+  /* 全站图片：不可拖动、不可选中（避免拖出幽灵图、误选蓝色高亮） */
   img {
     -webkit-user-drag: none;
     user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -webkit-touch-callout: none;
   }
 }
 
 /* 时间轴：隐藏滚动条，保留滚轮 / 触摸 / 拖动 */
 @layer components {
+  /* 画框氛围区：与全页同思路的轻纹理，不叠 mix-blend */
+  .paper-grain-hero {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 1px,
+        rgb(30 41 59 / 0.075) 1px,
+        rgb(30 41 59 / 0.075) 2px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 1px,
+        rgb(255 255 255 / 0.065) 1px,
+        rgb(255 255 255 / 0.065) 2px
+      ),
+      repeating-linear-gradient(
+        52deg,
+        transparent 0,
+        transparent 4px,
+        rgb(30 41 59 / 0.028) 4px,
+        rgb(30 41 59 / 0.028) 5px
+      );
+    background-size:
+      4px 4px,
+      4px 4px,
+      9px 9px;
+  }
+  @media (prefers-contrast: more) {
+    .paper-grain-hero {
+      opacity: 0;
+    }
+  }
+
   .timeline-scroll-hide {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -142,6 +214,21 @@
   }
 
   /* 视口上下线性渐隐：内容滚入/滚出时削弱硬切边 */
+  /* Toast：GPU 友好的 opacity/transform，无 JS 弹簧 */
+  .app-toast-enter {
+    animation: app-toast-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes app-toast-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
   .timeline-viewport-mask {
     -webkit-mask-image: linear-gradient(
       to bottom,

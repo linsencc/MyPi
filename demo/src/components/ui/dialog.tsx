@@ -15,7 +15,11 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/32 backdrop-blur-xl", className)}
+    className={cn(
+      /* Chrome：backdrop-filter 易与整页图层交互产生额外合成；遮罩用不透明度即可 */
+      "fixed inset-0 z-50 bg-black/45 backdrop-blur-none",
+      className
+    )}
     {...props}
   />
 ))

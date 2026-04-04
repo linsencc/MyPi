@@ -18,10 +18,16 @@ export const PreviewFrame = memo(function PreviewFrame({
   src,
   alt,
   imageFilter,
+  /**
+   * 节点网格等多处缩略预览：跳过 CSS filter。多张大图同时 `filter: brightness() contrast()…`
+   * 会显著增加合成与重绘成本，导致 hover/滚动不跟手。
+   */
+  lightweight = false,
 }: {
   src: string
   alt: string
   imageFilter: string
+  lightweight?: boolean
 }) {
   const [broken, setBroken] = useState(false)
   if (broken) {
@@ -38,9 +44,14 @@ export const PreviewFrame = memo(function PreviewFrame({
       src={src}
       alt={alt}
       draggable={false}
-      className="absolute inset-0 h-full w-full object-cover object-center"
-      style={{ filter: imageFilter }}
-      loading="eager"
+      onDragStart={(e) => e.preventDefault()}
+      className={cn(
+        "absolute inset-0 h-full w-full object-cover object-center select-none",
+        "[-webkit-user-drag:none]"
+      )}
+      style={lightweight ? undefined : { filter: imageFilter }}
+      loading={lightweight ? "lazy" : "eager"}
+      decoding="async"
       onError={() => setBroken(true)}
     />
   )

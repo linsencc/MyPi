@@ -400,7 +400,7 @@ export function PlaybackTimeline({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             className={cn(
-              "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5",
+              "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
               TIMELINE_VIEWPORT_H
             )}
           >

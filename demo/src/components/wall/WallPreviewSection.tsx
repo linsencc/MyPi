@@ -3,6 +3,7 @@ import { memo } from "react"
 import { PreviewFrame } from "@/components/preview/PreviewFrame"
 import type { FrameDisplayConfig } from "@/data/frame-config"
 import type { Unit } from "@/data/demo-data"
+import type { PreviewSrcRole } from "@/hooks/useInkypiSession"
 import { cn } from "@/lib/utils"
 
 export const WallPreviewSection = memo(function WallPreviewSection({
@@ -13,7 +14,7 @@ export const WallPreviewSection = memo(function WallPreviewSection({
 }: {
   nowOnWall: Unit | null
   frameConfig: FrameDisplayConfig
-  previewSrc: (u: Unit) => string
+  previewSrc: (u: Unit, role?: PreviewSrcRole) => string
   previewFilter: string
 }) {
   return (
@@ -33,34 +34,31 @@ export const WallPreviewSection = memo(function WallPreviewSection({
                   : "bg-[radial-gradient(ellipse_100%_78%_at_18%_0%,rgb(148_163_184/0.16),transparent_52%),radial-gradient(ellipse_72%_58%_at_90%_20%,rgb(148_163_184/0.1),transparent_46%),radial-gradient(ellipse_52%_44%_at_42%_98%,rgb(100_116_139/0.07),transparent_50%),linear-gradient(to_bottom,rgb(226_232_240/0.42),rgb(241_245_249/0.2),transparent)]"
               )}
             />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 bg-hero-noise opacity-[0.035] mix-blend-multiply [background-size:256px_256px]"
-            />
+            <div aria-hidden className="paper-grain-hero z-[1]" />
             <div className="relative z-10 flex justify-center px-2 py-3 sm:px-3 sm:py-4">
               <div className="flex w-full max-w-[min(100%,980px)] justify-center">
                 {frameConfig.orientation === "landscape" ? (
-                  <div
-                    className={cn(
-                      "relative aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45",
-                      "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
-                    )}
-                  >
+                    <div
+                      className={cn(
+                        "relative isolate aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 [contain:paint]",
+                        "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
+                      )}
+                    >
                     <PreviewFrame
-                      src={previewSrc(nowOnWall)}
+                      src={previewSrc(nowOnWall, "hero")}
                       alt={`${nowOnWall.name} 当前画面预览`}
                       imageFilter={previewFilter}
                     />
                   </div>
                 ) : (
-                  <div
-                    className={cn(
-                      "relative aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 sm:h-[min(44vh,360px)]",
-                      "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
-                    )}
-                  >
+                    <div
+                      className={cn(
+                        "relative isolate aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 [contain:paint] sm:h-[min(44vh,360px)]",
+                        "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
+                      )}
+                    >
                     <PreviewFrame
-                      src={previewSrc(nowOnWall)}
+                      src={previewSrc(nowOnWall, "hero")}
                       alt={`${nowOnWall.name} 当前画面预览`}
                       imageFilter={previewFilter}
                     />

@@ -274,7 +274,7 @@ export function EditUnitDialog({
             <p className="text-[12px] leading-relaxed text-slate-500">{schedulePreviewText}</p>
           </div>
 
-          <div className="relative z-40 flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
+            <div className="relative z-40 flex items-center justify-end gap-2 border-t border-slate-200/50 bg-slate-50/95 px-6 py-3.5">
             <Button
               type="button"
               variant="ghost"

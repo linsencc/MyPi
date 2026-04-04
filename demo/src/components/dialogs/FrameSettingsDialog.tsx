@@ -202,7 +202,7 @@ export function FrameSettingsDialog({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/50 bg-slate-100/25 px-6 py-3.5 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/50 bg-slate-50/95 px-6 py-3.5">
           <Button
             type="button"
             variant="ghost"

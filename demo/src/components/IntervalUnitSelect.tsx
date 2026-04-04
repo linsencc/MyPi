@@ -99,7 +99,7 @@ export function IntervalUnitSelect({
         ref={menuRef}
         id={listId}
         role="listbox"
-        className="pointer-events-auto absolute z-[80] overflow-hidden rounded-[length:var(--radius-md)] border border-slate-200/70 bg-white/95 p-1 shadow-[0_16px_48px_-12px_rgb(15_23_42/0.2),0_0_0_1px_rgb(15_23_42/0.04)] backdrop-blur-xl"
+        className="pointer-events-auto absolute z-[80] overflow-hidden rounded-[length:var(--radius-md)] border border-slate-200/70 bg-white p-1 shadow-[0_16px_48px_-12px_rgb(15_23_42/0.2),0_0_0_1px_rgb(15_23_42/0.04)]"
         style={{
           top: coords.top,
           left: coords.left,
