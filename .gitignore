@@ -1,6 +1,8 @@
 # Dependencies & tooling
 node_modules/
 .pnp.*
+# Lockfile generated per machine / npm version; install from package.json locally
+web/package-lock.json
 
 # Build outputs
 dist/
