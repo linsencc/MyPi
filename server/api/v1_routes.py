@@ -53,7 +53,7 @@ def create_scene():
     return (
         jsonify(
             {
-                "error": "Scenes are plugin-driven: one row per installed template. Add a renderer plugin and restart the server."
+                "error": "Scenes are template-driven: one row per installed template. Add a template and restart the server."
             }
         ),
         409,
@@ -94,7 +94,7 @@ def delete_scene(scene_id: str):
         return jsonify({"error": "not found"}), 404
     return (
         jsonify(
-            {"error": "Cannot delete plugin cards; remove the renderer plugin and restart to drop its scene."}
+            {"error": "Cannot delete template cards; remove the template and restart to drop its scene."}
         ),
         400,
     )

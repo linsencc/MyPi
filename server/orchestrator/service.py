@@ -13,7 +13,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from domain.models import AppConfig, UpcomingItem, WallState
 from orchestrator.next_run import global_min_next, next_fire_time
 from pipeline.wall_show import WallPipeline
-from renderers.registry import PluginRegistry
+from renderers.registry import TemplateRegistry
 from storage.stores import load_config, load_schedule_state
 from zoneinfo import ZoneInfo
 
@@ -34,7 +34,7 @@ def _resolve_tz(name: str) -> ZoneInfo:
 class WallOrchestrator:
     """Serializes wakeup / show-now so APScheduler and Flask never race on deques."""
 
-    def __init__(self, pipeline: WallPipeline, registry: PluginRegistry) -> None:
+    def __init__(self, pipeline: WallPipeline, registry: TemplateRegistry) -> None:
         self._pipeline = pipeline
         self._registry = registry
         tz_name = os.environ.get("MYPI_TZ", "Asia/Shanghai")

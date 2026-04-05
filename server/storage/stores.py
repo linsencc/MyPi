@@ -10,12 +10,12 @@ from domain.scene_reconcile import default_scene_for_template
 from storage.paths import config_path, schedule_state_path, wall_runs_path
 
 if TYPE_CHECKING:
-    from renderers.registry import PluginRegistry
+    from renderers.registry import TemplateRegistry
 
-_registry: PluginRegistry | None = None
+_registry: TemplateRegistry | None = None
 
 
-def set_config_registry(reg: PluginRegistry | None) -> None:
+def set_config_registry(reg: TemplateRegistry | None) -> None:
     global _registry
     _registry = reg
 
@@ -62,9 +62,9 @@ def load_config() -> AppConfig:
     raw = _dedupe_scenes_in_raw(raw)
     cfg = AppConfig.model_validate(raw)
     if _registry is not None:
-        from domain.scene_reconcile import reconcile_scenes_with_plugins
+        from domain.scene_reconcile import reconcile_scenes_with_templates
 
-        cfg2, changed = reconcile_scenes_with_plugins(cfg, _registry)
+        cfg2, changed = reconcile_scenes_with_templates(cfg, _registry)
         if changed:
             save_config(cfg2)
         return cfg2

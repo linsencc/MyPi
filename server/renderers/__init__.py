@@ -1,11 +1,11 @@
-﻿from .plugin_base import RenderContext, RenderResult, SceneSlice, WallTemplatePlugin
-from .registry import discover_plugins, PluginRegistry
+﻿from .template_base import RenderContext, RenderResult, SceneSlice, WallTemplate
+from .registry import discover_templates, TemplateRegistry
 
 __all__ = [
     "RenderContext",
     "RenderResult",
     "SceneSlice",
-    "WallTemplatePlugin",
-    "discover_plugins",
-    "PluginRegistry",
+    "WallTemplate",
+    "discover_templates",
+    "TemplateRegistry",
 ]

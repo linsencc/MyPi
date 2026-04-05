@@ -1,12 +1,12 @@
 """One-off dev server without Werkzeug reloader (single process, stable wall_state).
 
 Only one process should listen on 127.0.0.1:5050: duplicate Flask instances (e.g. old
-terminals) make requests hit a random server and can show stale plugins/templates.
+terminals) make requests hit a random server and can show stale templates.
 This script calls dev_port_check.ensure_dev_port_free before bind; if it exits, free
 the port (netstat -ano | findstr :5050) or stop other MyPi server terminals.
 
 threaded=False avoids concurrent Werkzeug workers sharing Pillow/FreeType state.
-Restart after changing plugins.
+Restart after changing templates.
 """
 from app.factory import create_app
 from dev_port_check import ensure_dev_port_free

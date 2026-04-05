@@ -4,15 +4,15 @@ import importlib
 import inspect
 import pkgutil
 
-from renderers import plugins as plugins_pkg
-from renderers.plugin_base import WallTemplatePlugin
+from renderers import templates as templates_pkg
+from renderers.template_base import WallTemplate
 
 
-class PluginRegistry:
-    def __init__(self, plugins: dict[str, WallTemplatePlugin]) -> None:
-        self._by_id = plugins
+class TemplateRegistry:
+    def __init__(self, templates: dict[str, WallTemplate]) -> None:
+        self._by_id = templates
 
-    def get(self, template_id: str) -> WallTemplatePlugin | None:
+    def get(self, template_id: str) -> WallTemplate | None:
         return self._by_id.get(template_id)
 
     def template_ids_ordered(self) -> list[str]:
@@ -25,14 +25,14 @@ class PluginRegistry:
         ]
 
 
-def discover_plugins() -> PluginRegistry:
-    found: dict[str, WallTemplatePlugin] = {}
-    for info in pkgutil.iter_modules(plugins_pkg.__path__):
+def discover_templates() -> TemplateRegistry:
+    found: dict[str, WallTemplate] = {}
+    for info in pkgutil.iter_modules(templates_pkg.__path__):
         if info.ispkg:
             continue
-        mod = importlib.import_module(f"{plugins_pkg.__name__}.{info.name}")
+        mod = importlib.import_module(f"{templates_pkg.__name__}.{info.name}")
         for _n, obj in inspect.getmembers(mod):
-            if isinstance(obj, type) and issubclass(obj, WallTemplatePlugin) and obj is not WallTemplatePlugin:
+            if isinstance(obj, type) and issubclass(obj, WallTemplate) and obj is not WallTemplate:
                 inst = obj()
                 tid = getattr(type(inst), "template_id", None) or getattr(inst, "template_id", None)
                 if not tid:
@@ -40,10 +40,10 @@ def discover_plugins() -> PluginRegistry:
                 if tid in found:
                     raise RuntimeError(f"duplicate template_id: {tid}")
                 found[tid] = inst
-        plug = getattr(mod, "plugin", None)
-        if isinstance(plug, WallTemplatePlugin):
-            tid = plug.template_id
+        tmpl = getattr(mod, "template", None)
+        if isinstance(tmpl, WallTemplate):
+            tid = tmpl.template_id
             if tid in found:
                 raise RuntimeError(f"duplicate template_id: {tid}")
-            found[tid] = plug
-    return PluginRegistry(found)
+            found[tid] = tmpl
+    return TemplateRegistry(found)

@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 from domain.models import Scene, WallRun
 from display.sink import DisplaySink
-from renderers.plugin_base import RenderContext, SceneSlice
-from renderers.registry import PluginRegistry
+from renderers.template_base import RenderContext, SceneSlice
+from renderers.registry import TemplateRegistry
 from storage.paths import run_output_dir
 from storage.stores import append_wall_run, new_wall_run_id, touch_last_shown
 
@@ -16,7 +16,7 @@ def _utc_iso() -> str:
 
 
 class WallPipeline:
-    def __init__(self, registry: PluginRegistry, sink: DisplaySink) -> None:
+    def __init__(self, registry: TemplateRegistry, sink: DisplaySink) -> None:
         self._registry = registry
         self._sink = sink
 
@@ -30,8 +30,8 @@ class WallPipeline:
         started = _utc_iso()
         t0 = time.perf_counter()
         try:
-            plugin = self._registry.get(scene.template_id)
-            if not plugin:
+            template = self._registry.get(scene.template_id)
+            if not template:
                 raise KeyError(f"unknown templateId: {scene.template_id}")
             out_dir = str(run_output_dir(run_id))
             ctx = RenderContext(
@@ -44,7 +44,7 @@ class WallPipeline:
                 device_profile=dict(device_profile or {}),
                 output_dir=out_dir,
             )
-            result = plugin.render(ctx)
+            result = template.render(ctx)
             self._sink.show(result.image_path)
             ms = int((time.perf_counter() - t0) * 1000)
             touch_last_shown(scene.id)

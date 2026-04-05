@@ -1,4 +1,4 @@
-import type { UnitRefreshMode } from "@/data/demo-data"
+import type { SceneRefreshMode } from "@/data/demo-data"
 
 /** 与 Date.getDay() 一致：0=周日 … 6=周六；界面顺序为 一二三四五六日 */
 export type IntervalTimeUnit = "s" | "m" | "h"
@@ -100,7 +100,7 @@ function formatWeekdayList(days: number[]): string {
 }
 
 export function describeRefreshPreview(
-  mode: UnitRefreshMode,
+  mode: SceneRefreshMode,
   intervalValue: number,
   intervalUnit: IntervalTimeUnit,
   scheduledClock: string,

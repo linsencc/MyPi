@@ -8,7 +8,7 @@ import sys
 def ensure_dev_port_free(host: str, port: int) -> None:
     """
     On Windows, multiple dev servers can both LISTEN on the same port when SO_REUSEADDR
-    is used, so clients hit a random instance (stale plugins/config). A short-lived bind
+    is used, so clients hit a random instance (stale templates/config). A short-lived bind
     with SO_EXCLUSIVEADDRUSE detects any existing listener on that port.
     On other OS, a normal bind without SO_REUSEADDR is enough to detect conflicts.
     """

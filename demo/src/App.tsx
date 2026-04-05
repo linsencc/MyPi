@@ -2,10 +2,10 @@ import { Settings2 } from "lucide-react"
 
 import { AppProviders } from "@/app/providers"
 import { AppToast } from "@/components/AppToast"
-import { EditUnitDialog } from "@/components/dialogs/EditUnitDialog"
+import { EditSceneDialog } from "@/components/dialogs/EditSceneDialog"
 import { FrameSettingsDialog } from "@/components/dialogs/FrameSettingsDialog"
 import { PlaybackTimeline } from "@/components/PlaybackTimeline"
-import { UnitCard } from "@/components/units/UnitCard"
+import { SceneCard } from "@/components/scenes/SceneCard"
 import { WallPreviewSection } from "@/components/wall/WallPreviewSection"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,15 +13,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useInkypiSession } from "@/hooks/useInkypiSession"
+import { useWallSession } from "@/hooks/useWallSession"
 
 export default function App() {
   const {
-    units,
+    scenes,
     editDialogOpen,
     frameDialogOpen,
     setFrameDialogOpen,
-    editingUnit,
+    editingScene,
     toast,
     rowBusyId,
     frameConfig,
@@ -34,7 +34,7 @@ export default function App() {
     runRenderNow,
     handleScheduleSave,
     handleEditDialogOpenChange,
-  } = useInkypiSession()
+  } = useWallSession()
 
   return (
     <AppProviders>
@@ -71,19 +71,19 @@ export default function App() {
           />
 
           <PlaybackTimeline
-            units={units}
+            scenes={scenes}
             currentOnWall={nowOnWall ? { id: nowOnWall.id, name: nowOnWall.name } : null}
             runLogs={mergedRunLogs}
           />
 
           <section className="space-y-5">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">绘画节点</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">场景</h2>
 
             <ul className="grid select-none grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10.25rem,1fr))] sm:gap-3">
-              {units.map((u) => (
-                <UnitCard
+              {scenes.map((u) => (
+                <SceneCard
                   key={u.id}
-                  unit={u}
+                  scene={u}
                   disabled={!u.enabled}
                   renderBusy={rowBusyId === u.id}
                   previewSrc={previewSrc}
@@ -102,9 +102,9 @@ export default function App() {
           onCommit={commitFrameDialog}
         />
 
-        <EditUnitDialog
+        <EditSceneDialog
           open={editDialogOpen}
-          unit={editingUnit}
+          scene={editingScene}
           onOpenChange={handleEditDialogOpenChange}
           onSave={handleScheduleSave}
         />

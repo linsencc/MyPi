@@ -10,7 +10,7 @@ from api.v1_routes import bp as api_v1_bp
 from display.sink import DisplaySink
 from orchestrator.service import WallOrchestrator
 from pipeline.wall_show import WallPipeline
-from renderers.registry import discover_plugins
+from renderers.registry import discover_templates
 from storage.stores import set_config_registry
 
 
@@ -23,7 +23,7 @@ def create_app() -> Flask:
     logging.basicConfig(level=logging.INFO)
     app = Flask(__name__)
 
-    registry = discover_plugins()
+    registry = discover_templates()
     set_config_registry(registry)
     pipeline = WallPipeline(registry, DisplaySink())
     orch = WallOrchestrator(pipeline, registry)

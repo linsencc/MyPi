@@ -35,7 +35,7 @@ description: >-
 ## MyPi 常见一键路径（代理应主动走）
 
 - **5050 被占 / 双 Flask**：查监听 PID → 结束多余进程 → 仅保留或重启 **一个** `python _dev_serve.py` → `curl` `/api/v1/templates` 确认与当前代码一致（如含 `schedule_stamp`）。
-- **验证插件 / API**：`cd server` + `PYTHONPATH=. python verify_demo.py`（代理执行，而非只建议用户执行）。
+- **验证模板 / API**：`cd server` + `PYTHONPATH=. python verify_demo.py`（代理执行，而非只建议用户执行）。
 
 ## 与其他技能的关系
 

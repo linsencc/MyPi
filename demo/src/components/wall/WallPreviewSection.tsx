@@ -2,8 +2,8 @@ import { memo } from "react"
 
 import { PreviewFrame } from "@/components/preview/PreviewFrame"
 import type { FrameDisplayConfig } from "@/data/frame-config"
-import type { Unit } from "@/data/demo-data"
-import type { PreviewSrcRole } from "@/hooks/useInkypiSession"
+import type { Scene } from "@/data/demo-data"
+import type { PreviewSrcRole } from "@/hooks/useWallSession"
 import { cn } from "@/lib/utils"
 
 export const WallPreviewSection = memo(function WallPreviewSection({
@@ -12,9 +12,9 @@ export const WallPreviewSection = memo(function WallPreviewSection({
   previewSrc,
   previewFilter,
 }: {
-  nowOnWall: Unit | null
+  nowOnWall: Scene | null
   frameConfig: FrameDisplayConfig
-  previewSrc: (u: Unit, role?: PreviewSrcRole) => string
+  previewSrc: (u: Scene, role?: PreviewSrcRole) => string
   previewFilter: string
 }) {
   return (
@@ -72,7 +72,7 @@ export const WallPreviewSection = memo(function WallPreviewSection({
         <div className="rounded-[length:var(--radius-surface)] border border-dashed border-slate-200/90 bg-slate-50/60 px-6 py-14 text-center">
           <p className="text-[15px] font-semibold text-slate-800">暂无画框展示内容</p>
           <p className="mx-auto mt-1.5 max-w-sm text-[12px] leading-relaxed text-slate-500">
-            启用至少一个绘画节点后，将在此显示预览。
+            启用至少一个场景后，将在此显示预览。
           </p>
         </div>
       )}

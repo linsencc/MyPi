@@ -3,7 +3,7 @@ import { memo, useState } from "react"
 
 import { cn } from "@/lib/utils"
 
-function unitAccent(typeKey: string) {
+function sceneAccent(typeKey: string) {
   switch (typeKey) {
     case "image-calendar":
       return { Icon: Calendar, iconClass: "text-violet-500/90" }
@@ -31,7 +31,7 @@ export const PreviewFrame = memo(function PreviewFrame({
 }) {
   const [broken, setBroken] = useState(false)
   if (broken) {
-    const { Icon, iconClass } = unitAccent("image-weather")
+    const { Icon, iconClass } = sceneAccent("image-weather")
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-200/90 text-center text-[13px] text-slate-500">
         <Icon className={cn("h-14 w-14 opacity-40", iconClass)} strokeWidth={1} />

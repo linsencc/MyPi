@@ -1,9 +1,9 @@
-"""Align persisted scenes with installed plugins: one schedulable row per template_id."""
+"""Align persisted scenes with installed templates: one schedulable row per template_id."""
 
 from __future__ import annotations
 
 from domain.models import AppConfig, IntervalSchedule, Scene
-from renderers.registry import PluginRegistry
+from renderers.registry import TemplateRegistry
 
 
 def _stable_scene_id(template_id: str) -> str:
@@ -26,7 +26,7 @@ def default_scene_for_template(template_id: str, *, display_name: str | None = N
     )
 
 
-def _scenes_fill_empty_names(scenes: list[Scene], registry: PluginRegistry) -> tuple[list[Scene], bool]:
+def _scenes_fill_empty_names(scenes: list[Scene], registry: TemplateRegistry) -> tuple[list[Scene], bool]:
     out: list[Scene] = []
     changed = False
     for s in scenes:
@@ -40,11 +40,11 @@ def _scenes_fill_empty_names(scenes: list[Scene], registry: PluginRegistry) -> t
     return out, changed
 
 
-def reconcile_scenes_with_plugins(cfg: AppConfig, registry: PluginRegistry) -> tuple[AppConfig, bool]:
+def reconcile_scenes_with_templates(cfg: AppConfig, registry: TemplateRegistry) -> tuple[AppConfig, bool]:
     """
     - One scene per registered template_id (registry order).
     - Duplicate template_ids in file: keep first occurrence, drop later.
-    - Unknown template_ids (plugin removed): drop scenes.
+    - Unknown template_ids (template removed): drop scenes.
     - Missing template_ids: append default scene.
     """
     ordered_ids = registry.template_ids_ordered()

@@ -8,7 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react"
 
-import { type RunLog, type Unit } from "@/data/demo-data"
+import { type RunLog, type Scene } from "@/data/demo-data"
 import { cn } from "@/lib/utils"
 
 function parseLogInstant(raw: string): number | null {
@@ -60,8 +60,8 @@ function formatRelativeHint(ms: number, nowMs: number): string {
 
 type Row = {
   key: string
-  unitId: string
-  unitName: string
+  sceneId: string
+  sceneName: string
   endMs: number
   ok: boolean
 }
@@ -210,32 +210,32 @@ const TimelineRowItem = memo(function TimelineRowItem({
               : "text-slate-500/95"
         )}
       >
-        {row.unitName}
+        {row.sceneName}
       </span>
     </li>
   )
 })
 
 export function PlaybackTimeline({
-  units,
+  scenes,
   currentOnWall,
   runLogs,
 }: {
-  units: Unit[]
+  scenes: Scene[]
   currentOnWall: { id: string; name: string } | null
   runLogs: Record<string, RunLog[]>
 }) {
   const rows = useMemo(() => {
     const list: Row[] = []
-    for (const u of units) {
+    for (const u of scenes) {
       let i = 0
       for (const log of runLogs[u.id] ?? []) {
         const endMs = parseLogInstant(log.end) ?? parseLogInstant(log.start)
         if (endMs == null) continue
         list.push({
           key: `${u.id}-${log.start}-${log.end}-${i}`,
-          unitId: u.id,
-          unitName: u.name,
+          sceneId: u.id,
+          sceneName: u.name,
           endMs,
           ok: log.ok,
         })
@@ -244,16 +244,16 @@ export function PlaybackTimeline({
     }
     list.sort((a, b) => b.endMs - a.endMs)
     return list.slice(0, MAX_EVENTS)
-  }, [units, runLogs])
+  }, [scenes, runLogs])
 
   const nowMs = useMemo(() => Date.now(), [rows])
 
   /** 当前上墙节点在列表中最近一条记录（优先成功）作为「正在展示」与时间锚点 */
   const playingAnchor = useMemo(() => {
     if (!currentOnWall) return null as { endMs: number; key: string } | null
-    const forUnit = rows.filter((r) => r.unitId === currentOnWall.id)
-    if (forUnit.length === 0) return null
-    const hit = forUnit.find((r) => r.ok) ?? forUnit[0]
+    const forScene = rows.filter((r) => r.sceneId === currentOnWall.id)
+    if (forScene.length === 0) return null
+    const hit = forScene.find((r) => r.ok) ?? forScene[0]
     return { endMs: hit.endMs, key: hit.key }
   }, [rows, currentOnWall])
 

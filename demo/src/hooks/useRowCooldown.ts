@@ -6,13 +6,13 @@ export function useRowCooldown(cooldownMs: number) {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const withCooldown = useCallback(
-    (unitId: string, action: () => void) => {
-      if (busyRef.current === unitId) return
-      busyRef.current = unitId
-      setBusyId(unitId)
+    (sceneId: string, action: () => void) => {
+      if (busyRef.current === sceneId) return
+      busyRef.current = sceneId
+      setBusyId(sceneId)
       action()
       window.setTimeout(() => {
-        if (busyRef.current === unitId) {
+        if (busyRef.current === sceneId) {
           busyRef.current = null
           setBusyId(null)
         }

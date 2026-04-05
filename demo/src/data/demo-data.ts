@@ -1,6 +1,6 @@
-export type UnitRefreshMode = "interval" | "scheduled"
+export type SceneRefreshMode = "interval" | "scheduled"
 
-export interface Unit {
+export interface Scene {
   id: string
   name: string
   /** 卡片简述：用途 / 场景 / 数据来源，约 20–40 字 */
@@ -10,7 +10,7 @@ export interface Unit {
   enabled: boolean
   nextRefresh: string
   /** 演示：刷新策略（间隔 / 定时），在编辑节点弹窗中配置 */
-  refreshMode: UnitRefreshMode
+  refreshMode: SceneRefreshMode
   /** 频率循环：周期（秒），供运行逻辑与切换模式时保留 */
   intervalSeconds: number
   /** 周期定时：触发时刻 HH:mm（24h） */
@@ -75,7 +75,7 @@ export const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "output-screen", label: "屏幕输出" },
 ]
 
-export const INITIAL_UNITS: Unit[] = [
+export const INITIAL_SCENES: Scene[] = [
   {
     id: "u1",
     name: "早间天气卡片",

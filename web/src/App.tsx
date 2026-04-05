@@ -5,7 +5,7 @@ import { AppToast } from "@/components/AppToast"
 import { EditSceneDialog } from "@/components/dialogs/EditSceneDialog"
 import { FrameSettingsDialog } from "@/components/dialogs/FrameSettingsDialog"
 import { WallRunsTimeline } from "@/components/WallRunsTimeline"
-import { SceneCard } from "@/components/units/SceneCard"
+import { SceneCard } from "@/components/scenes/SceneCard"
 import { WallPreviewSection } from "@/components/wall/WallPreviewSection"
 import { Button } from "@/components/ui/button"
 import {
