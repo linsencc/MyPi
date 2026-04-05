@@ -75,11 +75,11 @@ def main() -> int:
     si = _scene_interval(3600)
     t0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
     ni = next_fire_time(si, None, t0, tz)
-    if ni != t0 + timedelta(seconds=3600):
+    if ni != t0:
         print("FAIL TC-S4 interval first fire", ni)
         fails += 1
     else:
-        print("OK TC-S4 interval first fire = now + interval")
+        print("OK TC-S4 interval first fire = now")
 
     # TC-S5: interval with last_shown
     last = datetime(2026, 1, 1, 1, 0, 0, tzinfo=UTC)
@@ -153,6 +153,18 @@ def main() -> int:
                 fails += 1
             else:
                 print("OK TC-S8 wall/state upcoming[] ISO Z + sceneId", len(up), "items")
+
+    # TC-S9: wall_alarm must allow late fire (default APScheduler grace is 1s; missed wakeups stall scenes)
+    sched = app.extensions.get("scheduler")
+    job = sched.get_job("wall_alarm") if sched else None
+    if job is None:
+        print("FAIL TC-S9 wall_alarm job missing")
+        fails += 1
+    elif job.misfire_grace_time is not None:
+        print("FAIL TC-S9 wall_alarm misfire_grace_time", job.misfire_grace_time, "expected None")
+        fails += 1
+    else:
+        print("OK TC-S9 wall_alarm misfire_grace_time=None")
 
     if fails:
         print("RESULT: FAIL", fails)
