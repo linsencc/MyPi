@@ -20,13 +20,29 @@ def _is_werkzeug_reloader_parent() -> bool:
 
 
 def create_app() -> Flask:
-    logging.basicConfig(level=logging.INFO)
+    from app.log_setup import memory_handler
+    
+    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+    # Basic config for console
+    logging.basicConfig(level=logging.INFO, format=fmt, datefmt=datefmt)
+    
+    # Configure and add memory handler if not already added
+    if memory_handler not in logging.getLogger().handlers:
+        formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
+        memory_handler.setFormatter(formatter)
+        memory_handler.setLevel(logging.INFO)
+        logging.getLogger().addHandler(memory_handler)
+
     app = Flask(__name__)
 
     registry = discover_templates()
     set_config_registry(registry)
     pipeline = WallPipeline(registry, DisplaySink())
     orch = WallOrchestrator(pipeline, registry)
+    
+    # Hook memory handler to orchestrator's SSE
+    memory_handler.on_log = lambda entry: orch._broadcast_event("system_log", entry)
 
     from apscheduler.schedulers.background import BackgroundScheduler
 

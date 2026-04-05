@@ -61,7 +61,7 @@ export function EditSceneDialog({
   const [formRefreshMode, setFormRefreshMode] = useState<RefreshMode>("interval")
   const [formIntervalValue, setFormIntervalValue] = useState(5)
   const [formIntervalUnit, setFormIntervalUnit] = useState<IntervalTimeUnit>("m")
-  const [formScheduledClock, setFormScheduledClock] = useState("09:00")
+  const [formScheduledClock, setFormScheduledClock] = useState("09:00:00")
   const [formWeekdays, setFormWeekdays] = useState<number[]>(() => [...WEEKDAY_PRESETS.daily])
 
   useEffect(() => {
@@ -166,7 +166,7 @@ export function EditSceneDialog({
               </DialogTitle>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-[min(20rem,calc(100vw-3rem))] break-words">
-              编辑绘画节点
+              编辑绘画模版
             </TooltipContent>
           </Tooltip>
         </DialogHeader>
@@ -243,7 +243,7 @@ export function EditSceneDialog({
                     <Input
                       id="f-interval-value"
                       type="number"
-                      min={formIntervalUnit === "s" ? 30 : 1}
+                      min={formIntervalUnit === "s" ? 3 : 1}
                       step={1}
                       value={formIntervalValue}
                       onChange={(e) => setFormIntervalValue(Number(e.target.value))}

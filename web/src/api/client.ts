@@ -1,4 +1,4 @@
-import type { AppConfig, Scene, TemplateMeta, WallRun, WallState } from "@/types/api"
+import type { AppConfig, Scene, TemplateMeta, WallRun, WallState, SystemLog } from "@/types/api"
 
 const PREFIX = "/api/v1"
 
@@ -32,7 +32,7 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   if (init?.body != null && typeof init.body === "string" && !("Content-Type" in (headers as object))) {
     ;(headers as Record<string, string>)["Content-Type"] = "application/json"
   }
-  const r = await fetch(url, { ...init, headers })
+  const r = await fetch(url, { cache: "no-store", ...init, headers })
   if (r.status === 204) {
     return undefined as T
   }
@@ -73,9 +73,31 @@ export function putScene(id: string, scene: Scene) {
   })
 }
 
+export function createScene(scene: Partial<Scene>) {
+  return fetchJson<Scene>(`/scenes`, {
+    method: "POST",
+    body: JSON.stringify(scene),
+  })
+}
+
+export function deleteScene(id: string) {
+  return fetchJson<void>(`/scenes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+}
+
 export function showNow(sceneId: string) {
   return fetchJson<{ ok: boolean; wallState?: WallState }>(
     `/scenes/${encodeURIComponent(sceneId)}/show-now`,
+    {
+      method: "POST",
+    }
+  )
+}
+
+export function showNowTemplate(templateId: string) {
+  return fetchJson<{ ok: boolean; wallState?: WallState }>(
+    `/templates/${encodeURIComponent(templateId)}/show-now`,
     {
       method: "POST",
     }
@@ -88,4 +110,8 @@ export function getWallState() {
 
 export function getWallRuns() {
   return fetchJson<WallRun[]>("/wall/runs")
+}
+
+export function getSystemLogs() {
+  return fetchJson<SystemLog[]>("/system/logs")
 }

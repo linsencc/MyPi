@@ -1,5 +1,5 @@
 import { Calendar, CloudSun, Monitor } from "lucide-react"
-import { memo, useState } from "react"
+import { memo, useState, useEffect } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -30,6 +30,39 @@ export const PreviewFrame = memo(function PreviewFrame({
   lightweight?: boolean
 }) {
   const [broken, setBroken] = useState(false)
+  const [displaySrc, setDisplaySrc] = useState(src)
+
+  useEffect(() => {
+    setBroken(false)
+
+    if (src === displaySrc) return
+    let isCancelled = false
+
+    const img = new Image()
+    img.src = src
+    img.onload = () => {
+      if (isCancelled) return
+
+      // @ts-ignore View Transitions API might not be in all TS definitions
+      if (!lightweight && document.startViewTransition) {
+        // @ts-ignore
+        document.startViewTransition(() => {
+          setDisplaySrc(src)
+        })
+      } else {
+        setDisplaySrc(src)
+      }
+    }
+    img.onerror = () => {
+      if (isCancelled) return
+      setDisplaySrc(src)
+    }
+
+    return () => {
+      isCancelled = true
+    }
+  }, [src, displaySrc, lightweight])
+
   if (broken) {
     const { Icon, iconClass } = sceneAccent("image-weather")
     return (
@@ -41,7 +74,7 @@ export const PreviewFrame = memo(function PreviewFrame({
   }
   return (
     <img
-      src={src}
+      src={displaySrc}
       alt={alt}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}

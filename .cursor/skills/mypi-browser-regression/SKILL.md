@@ -1,20 +1,22 @@
 ---
 name: mypi-browser-regression
 description: >-
-  Requires Cursor IDE browser regression after substantive changes in the MyPi
+  Requires Cursor IDE browser regression and running through @test test cases after substantive changes in the MyPi
   repo. Use for any agent edit touching web/, server/, or demo/; before
   marking work complete, sign-off, or “交付”; whenever the user asks for
   regression or 回测. Complements mypi-browser-verify (how) with a default-on
   project policy (when).
 ---
 
-# MyPi：改动后 Cursor 浏览器回测（项目默认）
+# MyPi：改动后 Cursor 浏览器回测与测试案例回归（项目默认）
 
 ## 策略
 
-在本仓库内完成**实质性改动**后，在宣称「已完成 / 可交付」前，**须用 Cursor 内置浏览器**（`cursor-ide-browser` MCP）做**与本次改动相关的回测**，除非下方「可豁免」明确适用。
+在本仓库内完成**实质性改动**后，在宣称「已完成 / 可交付」前，**必须**：
+1. **过一遍 `@test` 目录下的测试案例**（如 `test/p0_regression_cases.md`），逐一确认受影响的功能仍符合预期并未被破坏。
+2. **用 Cursor 内置浏览器**（`cursor-ide-browser` MCP）做**与本次改动相关的回测**，除非下方「可豁免」明确适用。
 
-这与仅跑 `verify_demo.py`、`npm run build`、或静态读代码**不矛盾**：脚本能过仍**不能**代替对 Web 联调路径的浏览器回测（当改动落在适用范围内时）。
+这与仅跑 `verify_demo.py`、`npm run build`、或静态读代码**不矛盾**：脚本能过仍**不能**代替对 `@test` 目录下测试案例的回归覆盖，以及对 Web 联调路径的浏览器回测（当改动落在适用范围内时）。
 
 ## 必须做浏览器回测的范围
 
@@ -36,6 +38,7 @@ description: >-
 
 ## 交付时在回复中写明
 
+- **明确声明是否已过一遍 `@test` 目录下的相关测试案例**，并简述测试覆盖的功能点。
 - 浏览器中打开的 **URL**、执行的 **关键操作**、**快照/Network** 中确认到的结果（或截图说明）。
 - 若属「可豁免」范围，**一句话说明豁免理由**。
 

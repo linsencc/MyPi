@@ -15,7 +15,7 @@ export function validateScheduleForm(form: SceneScheduleFormState): string | nul
   if (form.refreshMode !== "scheduled") return null
   if (form.weekdays.length === 0) return "周期定时请至少选择一个星期"
   const probe = computeNextScheduledRefresh(form.scheduledClock.trim(), form.weekdays, new Date())
-  if (probe === "—") return "请填写有效的触发时间（时:分）"
+  if (probe === "—") return "请填写有效的触发时间（时:分:秒）"
   return null
 }
 

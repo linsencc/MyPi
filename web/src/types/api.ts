@@ -28,6 +28,8 @@ export interface TemplateMeta {
 export interface WallRun {
   id: string
   sceneId: string
+  sceneName: string
+  templateId: string
   startedAt: string
   finishedAt: string | null
   durationMs: number | null
@@ -44,6 +46,16 @@ export interface UpcomingItem {
 
 export interface WallState {
   currentSceneId: string | null
+  currentSceneName: string | null
+  currentTemplateId: string | null
   currentPreviewUrl: string | null
   upcoming: UpcomingItem[]
+}
+
+export interface SystemLog {
+  timestamp: string
+  level: string
+  name: string
+  message: string
+  formatted: string
 }

@@ -16,7 +16,7 @@ class CronWeeklySchedule(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     type: Literal["cron_weekly"] = "cron_weekly"
-    time: str = Field(description="HH:MM local")
+    time: str = Field(description="HH:MM or HH:MM:SS local")
     weekdays: list[int] = Field(
         default_factory=lambda: list(range(7)),
         description="0=Sunday (same as JS)",
@@ -50,21 +50,14 @@ class AppConfig(BaseModel):
     frame_tuning: dict[str, Any] = Field(default_factory=dict, alias="frameTuning")
     device_profile: dict[str, Any] = Field(default_factory=dict, alias="deviceProfile")
 
-    @model_validator(mode="after")
-    def unique_template_ids(self) -> AppConfig:
-        seen: set[str] = set()
-        for s in self.scenes:
-            if s.template_id in seen:
-                raise ValueError(f"duplicate templateId in config: {s.template_id}")
-            seen.add(s.template_id)
-        return self
-
 
 class WallRun(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
     scene_id: str = Field(alias="sceneId")
+    scene_name: str = Field("", alias="sceneName")
+    template_id: str = Field("", alias="templateId")
     started_at: str = Field(alias="startedAt")
     finished_at: str | None = Field(None, alias="finishedAt")
     duration_ms: int | None = Field(None, alias="durationMs")
@@ -85,5 +78,7 @@ class WallState(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     current_scene_id: str | None = Field(None, alias="currentSceneId")
+    current_scene_name: str | None = Field(None, alias="currentSceneName")
+    current_template_id: str | None = Field(None, alias="currentTemplateId")
     current_preview_url: str | None = Field(None, alias="currentPreviewUrl")
     upcoming: list[UpcomingItem] = Field(default_factory=list)

@@ -23,6 +23,7 @@ export interface InkypiImageSettings {
 export interface FrameDisplayConfig {
   orientation: FrameOrientation
   imageSettings: InkypiImageSettings
+  timelineMaxEvents?: number
 }
 
 export const INKYPI_IMAGE_DEFAULTS: InkypiImageSettings = {
@@ -36,6 +37,7 @@ export const INKYPI_IMAGE_DEFAULTS: InkypiImageSettings = {
 export const DEFAULT_FRAME_CONFIG: FrameDisplayConfig = {
   orientation: "portrait",
   imageSettings: { ...INKYPI_IMAGE_DEFAULTS },
+  timelineMaxEvents: 30,
 }
 
 /** 滑块定义：范围参照 InkyPi Web 可调与 PIL enhance 常用区间 */
@@ -124,7 +126,7 @@ export function loadFrameConfigFromStorage(): FrameDisplayConfig {
     } else {
       imageSettings = { ...INKYPI_IMAGE_DEFAULTS }
     }
-    return { orientation, imageSettings }
+    return { orientation, imageSettings, timelineMaxEvents: parsed.timelineMaxEvents as number | undefined ?? 30 }
   } catch {
     return { ...DEFAULT_FRAME_CONFIG, imageSettings: { ...INKYPI_IMAGE_DEFAULTS } }
   }
@@ -137,6 +139,7 @@ export function saveFrameConfigToStorage(cfg: FrameDisplayConfig): void {
       JSON.stringify({
         orientation: cfg.orientation,
         imageSettings: clampSettings(cfg.imageSettings),
+        timelineMaxEvents: cfg.timelineMaxEvents,
       })
     )
   } catch {

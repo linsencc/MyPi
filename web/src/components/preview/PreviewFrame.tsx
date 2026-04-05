@@ -1,5 +1,5 @@
 import { ImageIcon } from "lucide-react"
-import { memo, useState } from "react"
+import { memo, useEffect, useState } from "react"
 
 import { isDataImagePlaceholder } from "@/lib/preview-placeholder"
 import { cn } from "@/lib/utils"
@@ -16,8 +16,41 @@ export const PreviewFrame = memo(function PreviewFrame({
   lightweight?: boolean
 }) {
   const [broken, setBroken] = useState(false)
+  const [displaySrc, setDisplaySrc] = useState(src)
+  
+  useEffect(() => {
+    setBroken(false)
+    
+    if (src === displaySrc) return
+    let isCancelled = false
+    
+    const img = new Image()
+    img.src = src
+    img.onload = () => {
+      if (isCancelled) return
+      
+      // @ts-ignore View Transitions API might not be in all TS definitions
+      if (!lightweight && document.startViewTransition) {
+        // @ts-ignore
+        document.startViewTransition(() => {
+          setDisplaySrc(src)
+        })
+      } else {
+        setDisplaySrc(src)
+      }
+    }
+    img.onerror = () => {
+      if (isCancelled) return
+      setDisplaySrc(src)
+    }
+    
+    return () => {
+      isCancelled = true
+    }
+  }, [src, displaySrc, lightweight])
+  
   const useCssFilter =
-    !lightweight && Boolean(imageFilter) && !isDataImagePlaceholder(src)
+    !lightweight && Boolean(imageFilter) && !isDataImagePlaceholder(displaySrc)
   if (broken) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-200/90 text-center text-[13px] text-slate-500">
@@ -28,7 +61,7 @@ export const PreviewFrame = memo(function PreviewFrame({
   }
   return (
     <img
-      src={src}
+      src={displaySrc}
       alt={alt}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}

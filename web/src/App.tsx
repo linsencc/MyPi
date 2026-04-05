@@ -1,11 +1,14 @@
-import { RefreshCw, Settings2 } from "lucide-react"
+import { useState } from "react"
+import { Settings2, Terminal } from "lucide-react"
 
 import { AppProviders } from "@/app/providers"
 import { AppToast } from "@/components/AppToast"
+import { SystemLogsDialog } from "@/components/dialogs/SystemLogsDialog"
 import { EditSceneDialog } from "@/components/dialogs/EditSceneDialog"
 import { FrameSettingsDialog } from "@/components/dialogs/FrameSettingsDialog"
 import { WallRunsTimeline } from "@/components/WallRunsTimeline"
-import { SceneCard } from "@/components/scenes/SceneCard"
+import { TemplateCard } from "@/components/templates/TemplateCard"
+import { SceneList } from "@/components/scenes/SceneList"
 import { WallPreviewSection } from "@/components/wall/WallPreviewSection"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,20 +19,23 @@ import {
 import { useWallSession } from "@/hooks/useWallSession"
 
 export default function App() {
+  const [logsDialogOpen, setLogsDialogOpen] = useState(false)
+
   const {
     loading,
-    refreshing,
     loadError,
     refresh,
     config,
     templates,
-    nodeCards,
+    scenes,
+    wallState,
     wallRuns,
     frameConfig,
     nowOnWall,
     sceneNames,
     currentOnWallHeader,
     previewSrc,
+    templatePreviewSrc,
     previewFilter,
     editDialogOpen,
     frameDialogOpen,
@@ -39,10 +45,13 @@ export default function App() {
     rowBusyId,
     showToast,
     openEdit,
-    runShowNow,
+    runShowNowTemplate,
     handleEditDialogOpenChange,
     commitFrameDialog,
     handleSceneSave,
+    handleSceneDelete,
+    handleSceneCreate,
+    handleSceneToggle,
   } = useWallSession()
 
   if (loading && !config) {
@@ -86,19 +95,15 @@ export default function App() {
                     variant="ghost"
                     size="icon"
                     className="h-11 w-11 shrink-0 rounded-full text-slate-600 transition-[color,background-color,transform] hover:bg-slate-200/55 hover:text-slate-800 active:scale-[0.96] focus-visible:ring-slate-400/45 [&_svg]:!h-5 [&_svg]:!w-5"
-                    onClick={() => void refresh()}
-                    disabled={refreshing}
-                    aria-label="刷新数据"
+                    onClick={() => setLogsDialogOpen(true)}
+                    aria-label="系统日志"
                   >
-                    <RefreshCw
-                      strokeWidth={1.5}
-                      aria-hidden
-                      className={refreshing ? "animate-spin" : ""}
-                    />
+                    <Terminal strokeWidth={1.5} aria-hidden />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">从服务器刷新</TooltipContent>
+                <TooltipContent side="bottom">系统日志</TooltipContent>
               </Tooltip>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -119,7 +124,7 @@ export default function App() {
 
           {loadError && (
             <p className="rounded-lg border border-amber-200/80 bg-amber-50/90 px-4 py-2 text-[13px] text-amber-900">
-              {loadError}（可点击右上角刷新重试）
+              {loadError}（可刷新页面重试）
             </p>
           )}
 
@@ -135,27 +140,43 @@ export default function App() {
 
           <WallRunsTimeline
             runs={wallRuns}
+            upcoming={wallState?.upcoming ?? []}
             sceneNames={sceneNames}
             currentOnWall={currentOnWallHeader}
+            maxEvents={frameConfig.timelineMaxEvents ?? 30}
           />
 
           <section className="space-y-5">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">绘画节点</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">绘画模版</h2>
 
             <ul className="grid select-none grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10.25rem,1fr))] sm:gap-3">
-              {nodeCards.map(({ template: t, scene: s }) => (
-                <SceneCard
-                  key={s.id}
-                  scene={s}
-                  displayName={t.displayName}
-                  disabled={!s.enabled}
-                  renderBusy={rowBusyId === s.id}
-                  previewSrc={previewSrc}
-                  onRenderNow={runShowNow}
-                  onEdit={openEdit}
-                />
-              ))}
+              {templates.map((t) => {
+                const firstScene = scenes.find((s) => s.templateId === t.templateId)
+                const isBusy = firstScene ? rowBusyId === firstScene.id : false
+                
+                return (
+                  <TemplateCard
+                    key={t.templateId}
+                    template={t}
+                    previewUrl={templatePreviewSrc(t.templateId, t.displayName || t.templateId)}
+                    renderBusy={isBusy}
+                    onRenderNow={runShowNowTemplate}
+                    onCreateScene={handleSceneCreate}
+                  />
+                )
+              })}
             </ul>
+          </section>
+
+          <section className="space-y-5">
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">场景管理</h2>
+            <SceneList
+              scenes={scenes}
+              templates={templates}
+              onToggle={handleSceneToggle}
+              onEdit={openEdit}
+              onDelete={handleSceneDelete}
+            />
           </section>
         </div>
 
@@ -172,11 +193,13 @@ export default function App() {
           templates={templates}
           onOpenChange={handleEditDialogOpenChange}
           onSave={(next) => void handleSceneSave(next)}
+          onDelete={(id) => void handleSceneDelete(id)}
           onError={showToast}
         />
 
         <AppToast message={toast} />
       </div>
+      <SystemLogsDialog open={logsDialogOpen} onOpenChange={setLogsDialogOpen} />
     </AppProviders>
   )
 }

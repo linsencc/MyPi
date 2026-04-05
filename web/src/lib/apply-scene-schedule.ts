@@ -22,7 +22,7 @@ export function validateScheduleForm(form: SceneScheduleFormState): string | nul
   if (form.refreshMode !== "scheduled") return null
   if (form.weekdays.length === 0) return "周期定时请至少选择一个星期"
   const probe = computeNextScheduledRefresh(form.scheduledClock.trim(), form.weekdays, new Date())
-  if (probe === "—") return "请填写有效的触发时间（时:分）"
+  if (probe === "—") return "请填写有效的触发时间（时:分:秒）"
   return null
 }
 
@@ -54,7 +54,7 @@ export function scheduleToFormState(schedule: SceneSchedule): SceneScheduleFormS
       refreshMode: "interval",
       intervalValue: value,
       intervalUnit: unit,
-      scheduledClock: "09:00",
+      scheduledClock: "09:00:00",
       weekdays: [...WEEKDAY_PRESETS.daily],
     }
   }
@@ -62,7 +62,7 @@ export function scheduleToFormState(schedule: SceneSchedule): SceneScheduleFormS
     refreshMode: "scheduled",
     intervalValue: 5,
     intervalUnit: "m",
-    scheduledClock: (schedule.time ?? "").trim() || "09:00",
+    scheduledClock: (schedule.time ?? "").trim() || "09:00:00",
     weekdays: normalizeWeekdaysSelection(schedule.weekdays),
   }
 }

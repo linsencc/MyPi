@@ -13,7 +13,7 @@ export interface Scene {
   refreshMode: SceneRefreshMode
   /** 频率循环：周期（秒），供运行逻辑与切换模式时保留 */
   intervalSeconds: number
-  /** 周期定时：触发时刻 HH:mm（24h） */
+  /** 周期定时：触发时刻 HH:mm:ss（24h） */
   scheduledClock: string
   /** 周期定时：重复星期，0=周日…6=周六（与 Date.getDay() 一致） */
   scheduledWeekdays: number[]
@@ -101,7 +101,7 @@ export const INITIAL_SCENES: Scene[] = [
     nextRefresh: "2026-03-29 09:00:00",
     refreshMode: "scheduled",
     intervalSeconds: 3600,
-    scheduledClock: "09:00",
+    scheduledClock: "09:00:00",
     scheduledWeekdays: [0, 1, 2, 3, 4, 5, 6],
     lastStatus: { ok: true, text: "成功 · 0.8s" },
     previewImageUrl: "https://picsum.photos/seed/mypi-frame-u2/1440/1080",

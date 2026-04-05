@@ -116,7 +116,7 @@ export function useWallSession() {
           if (scene.refreshMode === "scheduled") {
             const days =
               scene.scheduledWeekdays.length > 0 ? scene.scheduledWeekdays : [0, 1, 2, 3, 4, 5, 6]
-            return computeNextScheduledRefresh(scene.scheduledClock || "09:00", days, new Date())
+            return computeNextScheduledRefresh(scene.scheduledClock || "09:00:00", days, new Date())
           }
           return computeNextRefreshFromInterval(scene.intervalSeconds)
         }

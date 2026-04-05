@@ -20,6 +20,8 @@ def ensure_dev_port_free(host: str, port: int) -> None:
             excl = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
             if excl is not None:
                 s.setsockopt(socket.SOL_SOCKET, excl, 1)
+        else:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, port))
     except OSError as e:
         print(

@@ -1,20 +1,23 @@
-"""Align persisted scenes with installed templates: one schedulable row per template_id."""
+"""Align persisted scenes with installed templates."""
 
 from __future__ import annotations
+
+import uuid
 
 from domain.models import AppConfig, IntervalSchedule, Scene
 from renderers.registry import TemplateRegistry
 
 
-def _stable_scene_id(template_id: str) -> str:
+def _unique_scene_id(template_id: str) -> str:
     safe = "".join(c if c.isalnum() or c in "_-" else "_" for c in template_id)
-    return f"scene-{safe}"
+    short_uuid = str(uuid.uuid4())[:8]
+    return f"scene-{safe}-{short_uuid}"
 
 
 def default_scene_for_template(template_id: str, *, display_name: str | None = None) -> Scene:
     label = (display_name or "").strip() or template_id
     return Scene(
-        id=_stable_scene_id(template_id),
+        id=_unique_scene_id(template_id),
         name=label,
         description="",
         enabled=True,
@@ -42,28 +45,17 @@ def _scenes_fill_empty_names(scenes: list[Scene], registry: TemplateRegistry) ->
 
 def reconcile_scenes_with_templates(cfg: AppConfig, registry: TemplateRegistry) -> tuple[AppConfig, bool]:
     """
-    - One scene per registered template_id (registry order).
-    - Duplicate template_ids in file: keep first occurrence, drop later.
+    - Retain all scenes whose template_id is still in the registry.
     - Unknown template_ids (template removed): drop scenes.
-    - Missing template_ids: append default scene.
+    - Note: We NO LONGER append a default scene if a template has no scenes. It is perfectly valid for a template to have 0 instances.
     """
-    ordered_ids = registry.template_ids_ordered()
-    by_tid: dict[str, Scene] = {}
-    order_first: list[str] = []
-    for s in cfg.scenes:
-        tid = s.template_id
-        if tid not in by_tid:
-            by_tid[tid] = s
-            order_first.append(tid)
-
+    valid_tids = set(registry.template_ids_ordered())
+    
     new_scenes: list[Scene] = []
-    for tid in ordered_ids:
-        if tid in by_tid:
-            new_scenes.append(by_tid[tid])
-        else:
-            plug = registry.get(tid)
-            dn = (plug.display_name if plug else None) or tid
-            new_scenes.append(default_scene_for_template(tid, display_name=dn))
+    
+    for s in cfg.scenes:
+        if s.template_id in valid_tids:
+            new_scenes.append(s)
 
     new_scenes, _ = _scenes_fill_empty_names(new_scenes, registry)
 

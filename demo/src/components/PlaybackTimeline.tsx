@@ -29,7 +29,7 @@ function startOfLocalDay(ms: number): number {
 
 function formatClock(ms: number): string {
   const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`
 }
 
 /** 当年为 M/D，跨年为 Y/M/D */
@@ -99,16 +99,9 @@ function dotClass(kind: DotKind, ok: boolean): string {
   )
 }
 
-const MAX_EVENTS = 80
-
-/** 单行最小高度，6 行固定视区避免条数从少变多时整体高度跳动 */
 const TIMELINE_ROW_MIN_H = "min-h-[2.625rem]"
-/** 列表区 6 行净高（不含滚动容器 pt-5 / pb-2） */
 const TIMELINE_SIX_ROWS_MIN_H = "min-h-[15.75rem]"
-/** 滚动区总高：上内边距 + 6 行 + 下内边距（与 pt-5、pb-2、ol pb-1 对齐） */
 const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
-
-/** 对称时间轴：左时间 + 中轴（圆点）+ 右内容 */
 const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
 /** 与中间列圆点对齐：左列 8rem + 中列一半 0.625rem（相对已含 pl-4 的内容区，勿再加 1rem） */
 const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
@@ -134,6 +127,7 @@ const TimelineRowItem = memo(function TimelineRowItem({
 
   return (
     <li
+      data-playing={kind === "playing" ? "true" : undefined}
       className={cn(
         "grid items-center gap-0 py-1.5",
         TIMELINE_ROW_MIN_H,
@@ -220,10 +214,12 @@ export function PlaybackTimeline({
   scenes,
   currentOnWall,
   runLogs,
+  maxEvents = 30,
 }: {
   scenes: Scene[]
   currentOnWall: { id: string; name: string } | null
   runLogs: Record<string, RunLog[]>
+  maxEvents?: number
 }) {
   const rows = useMemo(() => {
     const list: Row[] = []
@@ -243,8 +239,8 @@ export function PlaybackTimeline({
       }
     }
     list.sort((a, b) => b.endMs - a.endMs)
-    return list.slice(0, MAX_EVENTS)
-  }, [scenes, runLogs])
+    return list.slice(0, maxEvents)
+  }, [scenes, runLogs, maxEvents])
 
   const nowMs = useMemo(() => Date.now(), [rows])
 
@@ -267,7 +263,53 @@ export function PlaybackTimeline({
   const showEmptyHistory = rows.length === 0
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const listContainerRef = useRef<HTMLDivElement>(null)
+  const isFirstRender = useRef(true)
+  const idleTimerRef = useRef<number | null>(null)
   const [overflowY, setOverflowY] = useState(false)
+
+  const centerActiveNode = useCallback((behavior: ScrollBehavior) => {
+    const container = scrollRef.current
+    if (!container) return
+    const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
+    if (!activeEl) return
+
+    const containerRect = container.getBoundingClientRect()
+    const elRect = activeEl.getBoundingClientRect()
+    const relativeTop = elRect.top - containerRect.top + container.scrollTop
+    const targetTop = relativeTop - container.clientHeight / 2 + elRect.height / 2
+    
+    container.scrollTo({ top: targetTop, behavior })
+  }, [])
+
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current !== null) {
+      window.clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+    if (!scrollRef.current) return
+    
+    idleTimerRef.current = window.setTimeout(() => {
+      const container = scrollRef.current
+      if (!container) return
+      const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
+      if (!activeEl) return
+      
+      const containerRect = container.getBoundingClientRect()
+      const elRect = activeEl.getBoundingClientRect()
+      
+      if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
+        centerActiveNode("smooth")
+      }
+    }, 3000)
+  }, [centerActiveNode])
+
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current !== null) {
+      window.clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+  }, [])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -289,11 +331,23 @@ export function PlaybackTimeline({
     dragging: boolean
   }>({ pointerId: null, startY: 0, startScroll: 0, dragging: false })
 
+  useLayoutEffect(() => {
+    if (playingAnchor) {
+      const behavior = isFirstRender.current ? "auto" : "smooth"
+      if (!dragRef.current.dragging) {
+        centerActiveNode(behavior)
+      }
+    }
+    isFirstRender.current = false
+  }, [playingAnchor?.key, centerActiveNode])
+
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     if (!overflowY || e.button !== 0) return
     if (e.pointerType === "touch") return
     const el = scrollRef.current
-    if (!el) return
+    const target = listContainerRef.current
+    if (!el || !target) return
+    clearIdleTimer()
     dragRef.current = {
       pointerId: e.pointerId,
       startY: e.clientY,
@@ -301,11 +355,11 @@ export function PlaybackTimeline({
       dragging: false,
     }
     try {
-      el.setPointerCapture(e.pointerId)
+      target.setPointerCapture(e.pointerId)
     } catch {
       /* ignore */
     }
-  }, [overflowY])
+  }, [overflowY, clearIdleTimer])
 
   const onPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
@@ -322,12 +376,13 @@ export function PlaybackTimeline({
     const d = dragRef.current
     if (d.pointerId !== e.pointerId) return
     try {
-      scrollRef.current?.releasePointerCapture(e.pointerId)
+      listContainerRef.current?.releasePointerCapture(e.pointerId)
     } catch {
       /* ignore */
     }
     dragRef.current = { pointerId: null, startY: 0, startScroll: 0, dragging: false }
-  }, [])
+    resetIdleTimer()
+  }, [resetIdleTimer])
 
   const playingRowIndex = useMemo(() => {
     if (!playingAnchor) return -1
@@ -395,17 +450,26 @@ export function PlaybackTimeline({
         ) : (
           <div
             ref={scrollRef}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
+            onScroll={() => {
+              clearIdleTimer()
+              if (!dragRef.current.dragging) {
+                resetIdleTimer()
+              }
+            }}
             className={cn(
               "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
               TIMELINE_VIEWPORT_H
             )}
           >
             {/* 轴线放在随列表撑高的 relative 层内；勿直接贴在 overflow 滚动根上，否则 top/bottom 只会等于视口高，下方节点无连线 */}
-            <div className="relative">
+            <div
+              className="relative pr-12 lg:pr-16"
+              ref={listContainerRef}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+            >
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"

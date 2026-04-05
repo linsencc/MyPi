@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 
-import type { PreviewSrcRole } from "@/components/wall/WallPreviewSection"
 import {
   ApiError,
   getConfig,
@@ -9,27 +8,23 @@ import {
   getWallState,
   putConfig,
   putScene,
+  createScene,
+  deleteScene,
   showNow,
+  showNowTemplate,
 } from "@/api/client"
 import { getPreviewImageFilter, type FrameDisplayConfig } from "@/data/frame-config"
 import { frameConfigToTuning, parseFrameTuning } from "@/lib/frame-tuning-sync"
 import { useRowCooldown } from "@/hooks/useRowCooldown"
-import { PREVIEW_PLACEHOLDER_SRC } from "@/lib/preview-placeholder"
+import { 
+  getFallbackPlaceholder, 
+  isUsableImageRef, 
+  pickLatestOutputUrlForScene, 
+  pickLatestOutputUrlForTemplate 
+} from "@/lib/preview-resolve"
 import type { AppConfig, Scene, TemplateMeta, WallRun, WallState } from "@/types/api"
 
-type NodeCardRow = { template: TemplateMeta; scene: Scene }
-
-/** 无可用 http(s) 预览 URL 时用内联占位图（见 web/README.md） */
-const PLACEHOLDER = PREVIEW_PLACEHOLDER_SRC
 const ROW_COOLDOWN_MS = 650
-
-/** http(s) 或同源相对路径（经 Vite 代理到后端的 /api/...） */
-function isUsableImageRef(s: string | null | undefined): boolean {
-  if (!s?.trim()) return false
-  const t = s.trim()
-  if (t.startsWith("/")) return true
-  return /^https?:\/\//i.test(t)
-}
 
 export function useWallSession() {
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -37,7 +32,6 @@ export function useWallSession() {
   const [wallState, setWallState] = useState<WallState | null>(null)
   const [wallRuns, setWallRuns] = useState<WallRun[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -59,7 +53,6 @@ export function useWallSession() {
 
   const refresh = useCallback(async () => {
     setLoadError(null)
-    setRefreshing(true)
     try {
       const [cfg, tpl, ws, runs] = await Promise.all([
         getConfig(),
@@ -75,8 +68,6 @@ export function useWallSession() {
       const msg = e instanceof ApiError ? e.message : "加载失败，请确认后端已启动（端口 5050）"
       setLoadError(msg)
       showToast(msg)
-    } finally {
-      setRefreshing(false)
     }
   }, [showToast])
 
@@ -110,17 +101,30 @@ export function useWallSession() {
     }
   }, [])
 
-  const scenes = config?.scenes ?? []
+  useEffect(() => {
+    const sse = new EventSource('/api/v1/wall/events')
+    
+    sse.addEventListener('wall_update', (e) => {
+      console.log('Received wall_update event', e.data)
+      try {
+        const nextState = JSON.parse(e.data) as WallState
+        setWallState(nextState)
+      } catch (err) {
+        console.error('Failed to parse wall_update payload', err)
+      }
+      void refresh()
+    })
 
-  const nodeCards = useMemo((): NodeCardRow[] => {
-    const byTid = Object.fromEntries(scenes.map((s) => [s.templateId, s]))
-    return templates
-      .map((t) => {
-        const scene = byTid[t.templateId]
-        return scene ? { template: t, scene } : null
-      })
-      .filter((row): row is NodeCardRow => row !== null)
-  }, [scenes, templates])
+    sse.onerror = (e) => {
+      console.error('SSE Error', e)
+    }
+
+    return () => {
+      sse.close()
+    }
+  }, [refresh])
+
+  const scenes = config?.scenes ?? []
 
   const frameConfig = useMemo(
     () => parseFrameTuning(config?.frameTuning as Record<string, unknown> | undefined),
@@ -129,8 +133,22 @@ export function useWallSession() {
 
   const nowOnWall = useMemo(() => {
     if (!wallState?.currentSceneId) return null
-    return scenes.find((s) => s.id === wallState.currentSceneId) ?? null
-  }, [scenes, wallState?.currentSceneId])
+    const found = scenes.find((s) => s.id === wallState.currentSceneId)
+    if (found) return found
+    
+    // Fallback for ephemeral/deleted scenes
+    return {
+      id: wallState.currentSceneId,
+      name: wallState.currentSceneName ?? wallState.currentSceneId,
+      description: "",
+      enabled: true,
+      templateId: wallState.currentTemplateId ?? "",
+      templateParams: {},
+      schedule: { type: "interval", intervalSeconds: 300 },
+      previewImageUrl: wallState.currentPreviewUrl,
+      tieBreakPriority: 9,
+    } as Scene
+  }, [scenes, wallState])
 
   const sceneNames = useMemo(() => {
     const tidToDisplay = Object.fromEntries(templates.map((t) => [t.templateId, t.displayName]))
@@ -151,15 +169,45 @@ export function useWallSession() {
   const previewFilter = useMemo(() => getPreviewImageFilter(frameConfig.imageSettings), [frameConfig])
 
   const previewSrc = useCallback(
-    (scene: Scene, _role: PreviewSrcRole = "hero") => {
+    (scene: Scene) => {
+      // 1. Current on wall
       if (wallState?.currentSceneId === scene.id) {
         const u = wallState.currentPreviewUrl
         if (isUsableImageRef(u)) return u!.trim()
       }
+      // 2. Persistent preview URL
       if (isUsableImageRef(scene.previewImageUrl)) return scene.previewImageUrl!.trim()
-      return PLACEHOLDER
+      // 3. Latest output run for this scene
+      const latestRunOutput = pickLatestOutputUrlForScene(wallRuns, scene.id)
+      if (latestRunOutput) return latestRunOutput
+      // 4. Fallback placeholder
+      return getFallbackPlaceholder(scene.name || scene.templateId)
     },
-    [wallState]
+    [wallState, wallRuns]
+  )
+
+  const templatePreviewSrc = useCallback(
+    (templateId: string, displayTitle: string) => {
+      // 1. If this template is currently on the wall (e.g. via ephemeral run)
+      if (wallState?.currentTemplateId === templateId) {
+        const u = wallState.currentPreviewUrl
+        if (isUsableImageRef(u)) return u!.trim()
+      }
+      
+      // 2. Pick the first configured scene for this template and check its persistent preview
+      const firstScene = scenes.find((s) => s.templateId === templateId)
+      if (firstScene && isUsableImageRef(firstScene.previewImageUrl)) {
+        return firstScene.previewImageUrl!.trim()
+      }
+      
+      // 3. Latest output run for this template
+      const latestRunOutput = pickLatestOutputUrlForTemplate(wallRuns, templateId)
+      if (latestRunOutput) return latestRunOutput
+      
+      // 4. Fallback placeholder
+      return getFallbackPlaceholder(displayTitle)
+    },
+    [wallState, scenes, wallRuns]
   )
 
   const editingScene = useMemo(
@@ -197,6 +245,72 @@ export function useWallSession() {
       }
     },
     [config, refresh, showToast]
+  )
+
+  const handleSceneCreate = useCallback(
+    async (templateId: string) => {
+      try {
+        const newScene = await createScene({ templateId } as Partial<Scene>)
+        setConfig((c) =>
+          c
+            ? {
+                ...c,
+                scenes: [...c.scenes, newScene],
+              }
+            : c
+        )
+        showToast("场景已创建")
+        openEdit(newScene.id)
+        await refresh()
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "创建失败"
+        showToast(msg)
+      }
+    },
+    [refresh, showToast, openEdit]
+  )
+
+  const handleSceneDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteScene(id)
+        setConfig((c) =>
+          c
+            ? {
+                ...c,
+                scenes: c.scenes.filter((s) => s.id !== id),
+              }
+            : c
+        )
+        showToast("场景已删除")
+        await refresh()
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "删除失败"
+        showToast(msg)
+      }
+    },
+    [refresh, showToast]
+  )
+
+  const handleSceneToggle = useCallback(
+    async (scene: Scene, enabled: boolean) => {
+      const next = { ...scene, enabled }
+      try {
+        const saved = await putScene(next.id, next)
+        setConfig((c) =>
+          c
+            ? {
+                ...c,
+                scenes: c.scenes.map((s) => (s.id === saved.id ? saved : s)),
+              }
+            : c
+        )
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "状态切换失败"
+        showToast(msg)
+      }
+    },
+    [showToast]
   )
 
   const handleSceneSave = useCallback(
@@ -245,15 +359,32 @@ export function useWallSession() {
     [refresh, sceneNames, showToast, withCooldown]
   )
 
+  const runShowNowTemplate = useCallback(
+    (templateId: string) => {
+      withCooldown(templateId, () => {
+        void (async () => {
+          try {
+            const sn = await showNowTemplate(templateId)
+            if (sn.wallState) setWallState(sn.wallState)
+            showToast(`模板已上墙：${templateId}`)
+            await refresh()
+          } catch (e) {
+            const msg = e instanceof ApiError ? e.message : "请求失败"
+            showToast(msg)
+          }
+        })()
+      })
+    },
+    [refresh, showToast, withCooldown]
+  )
+
   return {
     loading,
-    refreshing,
     loadError,
     refresh,
     config,
     templates,
     scenes,
-    nodeCards,
     wallState,
     wallRuns,
     frameConfig,
@@ -261,6 +392,7 @@ export function useWallSession() {
     sceneNames,
     currentOnWallHeader,
     previewSrc,
+    templatePreviewSrc,
     previewFilter,
     editDialogOpen,
     frameDialogOpen,
@@ -271,8 +403,12 @@ export function useWallSession() {
     showToast,
     openEdit,
     runShowNow,
+    runShowNowTemplate,
     handleEditDialogOpenChange,
     commitFrameDialog,
     handleSceneSave,
+    handleSceneDelete,
+    handleSceneCreate,
+    handleSceneToggle,
   }
 }

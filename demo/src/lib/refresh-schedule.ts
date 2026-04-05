@@ -19,17 +19,17 @@ export function weekdayShort(d: number): string {
   return WD_SHORT[d] ?? "?"
 }
 
-/** 从「YYYY-MM-DD HH:mm:ss」解析出 HH:mm，失败则默认 09:00 */
+/** 从「YYYY-MM-DD HH:mm:ss」解析出 HH:mm:ss，失败则默认 09:00:00 */
 export function parseClockFromNextRefresh(raw: string): string {
   const s = (raw ?? "").trim().replace("T", " ")
-  if (s === "—" || !s) return "09:00"
-  const m = s.match(/\d{4}-\d{2}-\d{2}\s+(\d{1,2}):(\d{2})/)
-  if (!m) return "09:00"
-  return `${m[1].padStart(2, "0")}:${m[2]}`
+  if (s === "—" || !s) return "09:00:00"
+  const m = s.match(/\d{4}-\d{2}-\d{2}\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+  if (!m) return "09:00:00"
+  return m[3] ? `${m[1].padStart(2, "0")}:${m[2]}:${m[3]}` : `${m[1].padStart(2, "0")}:${m[2]}:00`
 }
 
 export function intervalSecondsToForm(sec: number): { value: number; unit: IntervalTimeUnit } {
-  const s = Math.max(30, Math.floor(Number(sec)) || 30)
+  const s = Math.max(3, Math.floor(Number(sec)) || 3)
   if (s >= 3600 && s % 3600 === 0) return { value: s / 3600, unit: "h" }
   if (s >= 60 && s % 60 === 0) return { value: s / 60, unit: "m" }
   return { value: s, unit: "s" }
@@ -43,7 +43,7 @@ export function formToIntervalSeconds(value: number, unit: IntervalTimeUnit): nu
     case "m":
       return Math.max(60, v * 60)
     default:
-      return Math.max(30, v)
+      return Math.max(3, v)
   }
 }
 
@@ -64,11 +64,12 @@ export function computeNextScheduledRefresh(
   weekdays: number[],
   from: Date = new Date()
 ): string {
-  const m = (clock ?? "").trim().match(/^(\d{1,2}):(\d{2})$/)
+  const m = (clock ?? "").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
   if (!m || weekdays.length === 0) return "—"
   const hh = Number(m[1])
   const mm = Number(m[2])
-  if (Number.isNaN(hh) || Number.isNaN(mm) || hh > 23 || mm > 59) return "—"
+  const ss = m[3] ? Number(m[3]) : 0
+  if (Number.isNaN(hh) || Number.isNaN(mm) || Number.isNaN(ss) || hh > 23 || mm > 59 || ss > 59) return "—"
   const set = new Set(weekdays)
   const fromMs = from.getTime()
 
@@ -76,7 +77,7 @@ export function computeNextScheduledRefresh(
     const d = new Date(from)
     d.setDate(d.getDate() + add)
     if (!set.has(d.getDay())) continue
-    d.setHours(hh, mm, 0, 0)
+    d.setHours(hh, mm, ss, 0)
     if (d.getTime() > fromMs) {
       const y = d.getFullYear()
       const mo = String(d.getMonth() + 1).padStart(2, "0")

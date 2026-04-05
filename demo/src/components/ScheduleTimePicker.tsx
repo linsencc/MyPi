@@ -4,40 +4,44 @@ import { useEffect, useState } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-function parseHm(raw: string): { h: number; m: number } {
-  const m = (raw ?? "").trim().match(/^(\d{1,2}):(\d{2})$/)
-  if (!m) return { h: 9, m: 0 }
+function parseHm(raw: string): { h: number; m: number; s: number } {
+  const m = (raw ?? "").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+  if (!m) return { h: 9, m: 0, s: 0 }
   let h = Number(m[1])
   let min = Number(m[2])
+  let s = m[3] ? Number(m[3]) : 0
   if (Number.isNaN(h) || h < 0 || h > 23) h = 9
   if (Number.isNaN(min) || min < 0 || min > 59) min = 0
-  min = Math.round(min / 5) * 5
-  if (min > 55) min = 55
-  return { h, m: min }
+  if (Number.isNaN(s) || s < 0 || s > 59) s = 0
+  return { h, m: min, s }
 }
 
-function formatHm(h: number, m: number): string {
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+function formatHm(h: number, m: number, s: number): string {
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
 function tryParseTyped(s: string): string | null {
   let t = s.trim().replace(/[^\d:]/g, "")
   if (!t) return null
-  if (!t.includes(":") && t.length >= 3) {
-    t = `${t.slice(0, -2)}:${t.slice(-2)}`
+  if (!t.includes(":")) {
+    if (t.length === 5 || t.length === 6) {
+      t = `${t.slice(0, -4)}:${t.slice(-4, -2)}:${t.slice(-2)}`
+    } else if (t.length >= 3) {
+      t = `${t.slice(0, -2)}:${t.slice(-2)}`
+    }
   }
-  const m = t.match(/^(\d{1,2}):(\d{2})$/)
+  const m = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
   if (!m) return null
   const h = Number(m[1])
-  const min = Number(m[2])
+  let min = Number(m[2])
+  const sec = m[3] ? Number(m[3]) : 0
   if (Number.isNaN(h) || Number.isNaN(min) || h < 0 || h > 23 || min < 0 || min > 59) return null
-  const mr = Math.round(min / 5) * 5
-  const mf = mr > 55 ? 55 : mr
-  return formatHm(h, mf)
+  if (Number.isNaN(sec) || sec < 0 || sec > 59) return null
+  return formatHm(h, min, sec)
 }
 
 /**
- * 触发时间：前缀时钟 + 单行 HH:mm 文本输入（无下拉/浮层）。
+ * 触发时间：前缀时钟 + 单行 HH:mm:ss 文本输入（无下拉/浮层）。
  * 失焦或 Enter 时解析；非法则恢复为上次有效值。
  */
 export function ScheduleTimePicker({
@@ -52,8 +56,8 @@ export function ScheduleTimePicker({
   id?: string
 }) {
   const toDisplay = (v: string) => {
-    const { h, m } = parseHm(v)
-    return formatHm(h, m)
+    const { h, m, s } = parseHm(v)
+    return formatHm(h, m, s)
   }
   const [draft, setDraft] = useState(() => toDisplay(value))
 
@@ -73,7 +77,7 @@ export function ScheduleTimePicker({
 
   const hintId = id ? `${id}-hint` : undefined
 
-  const hintText = "24 小时制。可输入 06:30 或 0630，分钟按 5 分钟取整。"
+  const hintText = "24 小时制。可输入 06:30:00 或 063000，精确到秒。"
 
   return (
     <div className="w-fit max-w-full">
@@ -92,7 +96,7 @@ export function ScheduleTimePicker({
               inputMode="numeric"
               autoComplete="off"
               spellCheck={false}
-              placeholder="09:00"
+              placeholder="09:00:00"
               aria-describedby={hintId}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

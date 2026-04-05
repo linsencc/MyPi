@@ -30,21 +30,68 @@ def next_fire_time(
     if sch.type == "interval":
         sec = sch.interval_seconds
         if last_shown_at_utc is None:
-            return now_utc + timedelta(seconds=sec)
+            return now_utc
         return last_shown_at_utc + timedelta(seconds=sec)
     if sch.type == "cron_weekly":
         wd_set = set(sch.weekdays or list(range(7)))
-        h, m = sch.time.split(":")
-        hi, mi = int(h), int(m)
+        parts = sch.time.split(":")
+        hi, mi = int(parts[0]), int(parts[1])
+        si = int(parts[2]) if len(parts) > 2 else 0
         for delta in range(0, 370):
             day = now_local.date() + timedelta(days=delta)
             if _js_weekday(day) not in wd_set:
                 continue
-            cand_local = datetime(day.year, day.month, day.day, hi, mi, tzinfo=tz)
-            if cand_local <= now_local:
-                continue
+            cand_local = datetime(day.year, day.month, day.day, hi, mi, si, tzinfo=tz)
+            
+            # If never shown, allow a small grace period (e.g. 1 minute)
+            # so that if now_local is slightly past cand_local (e.g. due to scheduler jitter),
+            # we don't immediately skip it.
+            if last_shown_at_utc is None:
+                if cand_local <= now_local - timedelta(minutes=1):
+                    continue
+            else:
+                last_local = last_shown_at_utc.astimezone(tz)
+                # Use strictly last_shown_at_utc as the anchor to avoid re-triggering or drifting
+                if cand_local <= last_local:
+                    continue
+                # Also ensure it hasn't completely passed today in case it was missed by a huge margin,
+                # though usually we want to trigger missed jobs. We'll stick to now_local check but with grace.
+                if cand_local <= now_local - timedelta(minutes=1):
+                    continue
+
             return cand_local.astimezone(UTC)
     return None
+
+
+def future_fire_times(
+    scene: Scene,
+    last_shown_at_utc: datetime | None,
+    now_utc: datetime,
+    tz: ZoneInfo,
+    limit: int = 10,
+    max_hours: int = 24,
+) -> list[datetime]:
+    """Calculate multiple future execution times for a scene."""
+    if not scene.enabled:
+        return []
+        
+    times: list[datetime] = []
+    current_last = last_shown_at_utc
+    max_time = now_utc + timedelta(hours=max_hours)
+    
+    for _ in range(limit):
+        nxt = next_fire_time(scene, current_last, now_utc, tz)
+        if not nxt:
+            break
+        if nxt > max_time:
+            break
+        # To avoid same time returned infinitely if schedule is somehow broken
+        if current_last and nxt <= current_last:
+            break
+        times.append(nxt)
+        current_last = nxt
+        
+    return times
 
 
 def global_min_next(

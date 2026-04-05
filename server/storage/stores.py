@@ -29,27 +29,6 @@ def default_config() -> AppConfig:
     return AppConfig(scenes=[s])
 
 
-def _dedupe_scenes_in_raw(raw: dict[str, Any]) -> dict[str, Any]:
-    scenes = raw.get("scenes")
-    if not isinstance(scenes, list):
-        return raw
-    seen: set[str] = set()
-    out: list[Any] = []
-    for item in scenes:
-        if not isinstance(item, dict):
-            out.append(item)
-            continue
-        tid = item.get("templateId")
-        if not isinstance(tid, str) or not tid:
-            out.append(item)
-            continue
-        if tid in seen:
-            continue
-        seen.add(tid)
-        out.append(item)
-    return {**raw, "scenes": out}
-
-
 def load_config() -> AppConfig:
     p = config_path()
     if not p.is_file():
@@ -59,7 +38,6 @@ def load_config() -> AppConfig:
     raw = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raw = {}
-    raw = _dedupe_scenes_in_raw(raw)
     cfg = AppConfig.model_validate(raw)
     if _registry is not None:
         from domain.scene_reconcile import reconcile_scenes_with_templates

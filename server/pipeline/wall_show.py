@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import time
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from renderers.template_base import RenderContext, SceneSlice
 from renderers.registry import TemplateRegistry
 from storage.paths import run_output_dir
 from storage.stores import append_wall_run, new_wall_run_id, touch_last_shown
+
+log = logging.getLogger(__name__)
 
 
 def _utc_iso() -> str:
@@ -30,6 +33,11 @@ class WallPipeline:
         run_id = new_wall_run_id()
         started = _utc_iso()
         t0 = time.perf_counter()
+        log.info(f"Pipeline: Starting render for scene_id={scene.id} (run_id={run_id})")
+        
+        # Always touch last_shown first to avoid infinite loops if render fails
+        touch_last_shown(scene.id)
+        
         try:
             template = self._registry.get(scene.template_id)
             if not template:
@@ -57,10 +65,12 @@ class WallPipeline:
             
             self._sink.show(image_path_str)
             ms = int((time.perf_counter() - t0) * 1000)
-            touch_last_shown(scene.id)
+            log.info(f"Pipeline: Rendered scene_id={scene.id} successfully in {ms}ms (output={image_path_str})")
             run = WallRun(
                 id=run_id,
                 scene_id=scene.id,
+                scene_name=scene.name or scene.template_id,
+                template_id=scene.template_id,
                 started_at=started,
                 finished_at=_utc_iso(),
                 duration_ms=ms,
@@ -71,10 +81,13 @@ class WallPipeline:
             append_wall_run(run)
             return run
         except Exception as e:
+            log.exception(f"Pipeline: Render failed for scene_id={scene.id} (run_id={run_id})")
             ms = int((time.perf_counter() - t0) * 1000)
             run = WallRun(
                 id=run_id,
                 scene_id=scene.id,
+                scene_name=scene.name or scene.template_id,
+                template_id=scene.template_id,
                 started_at=started,
                 finished_at=_utc_iso(),
                 duration_ms=ms,
