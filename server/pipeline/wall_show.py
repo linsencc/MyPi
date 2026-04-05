@@ -2,6 +2,7 @@
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from domain.models import Scene, WallRun
 from display.sink import DisplaySink
@@ -33,7 +34,9 @@ class WallPipeline:
             template = self._registry.get(scene.template_id)
             if not template:
                 raise KeyError(f"unknown templateId: {scene.template_id}")
-            out_dir = str(run_output_dir(run_id))
+            out_dir = Path(run_output_dir(run_id))
+            out_dir.mkdir(parents=True, exist_ok=True)
+            
             ctx = RenderContext(
                 scene=SceneSlice(
                     id=scene.id,
@@ -42,10 +45,17 @@ class WallPipeline:
                 ),
                 frame_tuning=dict(frame_tuning or {}),
                 device_profile=dict(device_profile or {}),
-                output_dir=out_dir,
             )
-            result = template.render(ctx)
-            self._sink.show(result.image_path)
+            
+            # The template now returns a PIL.Image.Image directly
+            img = template.render(ctx)
+            
+            # Pipeline takes over saving the image
+            out_path = out_dir / f"{scene.id}_{run_id}.png"
+            img.save(out_path, format="PNG")
+            image_path_str = str(out_path.resolve())
+            
+            self._sink.show(image_path_str)
             ms = int((time.perf_counter() - t0) * 1000)
             touch_last_shown(scene.id)
             run = WallRun(
@@ -56,7 +66,7 @@ class WallPipeline:
                 duration_ms=ms,
                 ok=True,
                 error_message=None,
-                output_path=result.image_path,
+                output_path=image_path_str,
             )
             append_wall_run(run)
             return run

@@ -3,9 +3,16 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
+import re
 
 from renderers import templates as templates_pkg
 from renderers.template_base import WallTemplate
+
+
+def _to_snake_case(name: str) -> str:
+    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    name = re.sub("([a-z0-9])([A-Z])", r"\1_\2", name)
+    return name.lower()
 
 
 class TemplateRegistry:
@@ -20,8 +27,8 @@ class TemplateRegistry:
 
     def all_metadata(self) -> list[dict[str, str]]:
         return [
-            {"templateId": p.template_id, "displayName": p.display_name}
-            for p in sorted(self._by_id.values(), key=lambda x: x.template_id)
+            {"templateId": tid, "displayName": inst.display_name}
+            for tid, inst in sorted(self._by_id.items(), key=lambda x: x[0])
         ]
 
 
@@ -34,15 +41,17 @@ def discover_templates() -> TemplateRegistry:
         for _n, obj in inspect.getmembers(mod):
             if isinstance(obj, type) and issubclass(obj, WallTemplate) and obj is not WallTemplate:
                 inst = obj()
-                tid = getattr(type(inst), "template_id", None) or getattr(inst, "template_id", None)
-                if not tid:
-                    continue
+                tid = _to_snake_case(obj.__name__)
+                if tid.endswith("_template"):
+                    tid = tid[:-9]
                 if tid in found:
                     raise RuntimeError(f"duplicate template_id: {tid}")
                 found[tid] = inst
         tmpl = getattr(mod, "template", None)
         if isinstance(tmpl, WallTemplate):
-            tid = tmpl.template_id
+            tid = _to_snake_case(tmpl.__class__.__name__)
+            if tid.endswith("_template"):
+                tid = tid[:-9]
             if tid in found:
                 raise RuntimeError(f"duplicate template_id: {tid}")
             found[tid] = tmpl

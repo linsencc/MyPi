@@ -11,7 +11,7 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageDraw, ImageFont
 
-from renderers.template_base import RenderContext, RenderResult, WallTemplate
+from renderers.template_base import RenderContext, WallTemplate
 
 log = logging.getLogger(__name__)
 
@@ -190,12 +190,12 @@ def _wrap_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
 
 
 class DailyMottoTemplate(WallTemplate):
-    template_id = "daily_motto"
     display_name = "每日寄语"
 
-    def render(self, ctx: RenderContext) -> RenderResult:
+    def render(self, ctx: RenderContext) -> Image.Image:
         text = _resolve_text(ctx.scene.template_params)
-        w, h = 800, 600
+        w = ctx.device_profile.get("width", 800)
+        h = ctx.device_profile.get("height", 600)
         img = Image.new("RGB", (w, h), color=(248, 246, 240))
         draw = ImageDraw.Draw(img)
         size_px = 34
@@ -210,6 +210,4 @@ class DailyMottoTemplate(WallTemplate):
             tw = bbox[2] - bbox[0]
             x = max(24, (w - tw) // 2)
             draw.text((x, y0 + k * line_h), line[:220], fill=fill, font=font)
-        out = Path(ctx.output_dir) / f"daily_motto_{uuid.uuid4().hex}.png"
-        img.save(out, format="PNG")
-        return RenderResult(image_path=str(out.resolve()))
+        return img

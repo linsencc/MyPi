@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
-from renderers.template_base import RenderContext, RenderResult, WallTemplate
+from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.daily_motto import _load_cjk_font
 
 
@@ -28,14 +28,14 @@ def _format_stamp(now: datetime) -> str:
 
 
 class ScheduleStampTemplate(WallTemplate):
-    template_id = "schedule_stamp"
     display_name = "调度时间戳"
 
-    def render(self, ctx: RenderContext) -> RenderResult:
+    def render(self, ctx: RenderContext) -> Image.Image:
         tz = _resolve_tz()
         now = datetime.now(tz)
         text = _format_stamp(now)
-        w, h = 800, 600
+        w = ctx.device_profile.get("width", 800)
+        h = ctx.device_profile.get("height", 600)
         img = Image.new("RGB", (w, h), color=(240, 248, 255))
         draw = ImageDraw.Draw(img)
         size_px = 56
@@ -50,6 +50,4 @@ class ScheduleStampTemplate(WallTemplate):
         small = _load_cjk_font(18)
         hb = draw.textbbox((0, 0), hint, font=small)
         draw.text((24, h - 48 - (hb[3] - hb[1])), hint, fill=(100, 120, 140), font=small)
-        out = Path(ctx.output_dir) / f"schedule_stamp_{uuid.uuid4().hex}.png"
-        img.save(out, format="PNG")
-        return RenderResult(image_path=str(out.resolve()))
+        return img

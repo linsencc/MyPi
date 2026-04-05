@@ -2,11 +2,10 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-
-@dataclass(frozen=True)
-class RenderResult:
-    image_path: str
+if TYPE_CHECKING:
+    from PIL.Image import Image
 
 
 @dataclass(frozen=True)
@@ -21,13 +20,11 @@ class RenderContext:
     scene: SceneSlice
     frame_tuning: dict
     device_profile: dict
-    output_dir: str
 
 
 class WallTemplate(ABC):
-    template_id: str
     display_name: str
 
     @abstractmethod
-    def render(self, ctx: RenderContext) -> RenderResult:
+    def render(self, ctx: RenderContext) -> Image:
         raise NotImplementedError
