@@ -17,6 +17,7 @@ export const PreviewFrame = memo(function PreviewFrame({
 }) {
   const [broken, setBroken] = useState(false)
   const [displaySrc, setDisplaySrc] = useState(src)
+  const [previousSrc, setPreviousSrc] = useState<string | null>(null)
   
   useEffect(() => {
     setBroken(false)
@@ -29,14 +30,17 @@ export const PreviewFrame = memo(function PreviewFrame({
     img.onload = () => {
       if (isCancelled) return
       
-      // @ts-ignore View Transitions API might not be in all TS definitions
-      if (!lightweight && document.startViewTransition) {
-        // @ts-ignore
-        document.startViewTransition(() => {
-          setDisplaySrc(src)
-        })
-      } else {
+      const update = () => {
+        setPreviousSrc(displaySrc)
         setDisplaySrc(src)
+      }
+      
+      // @ts-ignore View Transitions API might not be in all TS definitions
+      if (document.startViewTransition) {
+        // @ts-ignore
+        document.startViewTransition(update)
+      } else {
+        update()
       }
     }
     img.onerror = () => {
@@ -47,10 +51,11 @@ export const PreviewFrame = memo(function PreviewFrame({
     return () => {
       isCancelled = true
     }
-  }, [src, displaySrc, lightweight])
+  }, [src, displaySrc])
   
   const useCssFilter =
     !lightweight && Boolean(imageFilter) && !isDataImagePlaceholder(displaySrc)
+  
   if (broken) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-200/90 text-center text-[13px] text-slate-500">
@@ -59,20 +64,31 @@ export const PreviewFrame = memo(function PreviewFrame({
       </div>
     )
   }
+
+  const containerStyle = previousSrc ? {
+    backgroundImage: `url(${previousSrc})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  } : undefined
+
   return (
-    <img
-      src={displaySrc}
-      alt={alt}
-      draggable={false}
-      onDragStart={(e) => e.preventDefault()}
-      className={cn(
-        "absolute inset-0 h-full w-full object-cover object-center select-none",
-        "[-webkit-user-drag:none]"
-      )}
-      style={useCssFilter ? { filter: imageFilter } : undefined}
-      loading={lightweight ? "lazy" : "eager"}
-      decoding="async"
-      onError={() => setBroken(true)}
-    />
+    <div className="absolute inset-0 h-full w-full overflow-hidden" style={containerStyle}>
+      <img
+        key={displaySrc}
+        src={displaySrc}
+        alt={alt}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        className={cn(
+          "absolute inset-0 h-full w-full object-cover object-center select-none",
+          "[-webkit-user-drag:none]",
+          previousSrc && "animate-preview-fade-in"
+        )}
+        style={useCssFilter ? { filter: imageFilter } : undefined}
+        loading={lightweight ? "lazy" : "eager"}
+        decoding="async"
+        onError={() => setBroken(true)}
+      />
+    </div>
   )
 })

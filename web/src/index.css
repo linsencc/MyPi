@@ -47,6 +47,16 @@
   --animate-shimmer-slide: shimmer-slide 3s ease-in-out infinite alternate;
   --animate-spin-around: spin-around 6s linear infinite;
   --animate-gradient: gradient 8s linear infinite;
+  --animate-preview-fade-in: preview-fade-in 0.4s ease-out both;
+}
+
+@keyframes preview-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes shimmer-slide {

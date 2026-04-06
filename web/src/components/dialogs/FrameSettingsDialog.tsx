@@ -47,7 +47,7 @@ export function FrameSettingsDialog({
       imageSettings: { ...committedConfig.imageSettings },
       timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
     })
-  }, [open, committedConfig])
+  }, [open])
 
   const resetSlider = (key: keyof InkypiImageSettings) => {
     const spec = INKYPI_SLIDER_SPECS.find((s) => s.key === key)

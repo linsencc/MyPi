@@ -51,12 +51,9 @@ def next_fire_time(
                     continue
             else:
                 last_local = last_shown_at_utc.astimezone(tz)
-                # Use strictly last_shown_at_utc as the anchor to avoid re-triggering or drifting
+                # Anchor on last_shown only: the next occurrence is the first matching slot strictly after it.
+                # Do not skip slots that are a few minutes past now — late scheduler ticks must still fire.
                 if cand_local <= last_local:
-                    continue
-                # Also ensure it hasn't completely passed today in case it was missed by a huge margin,
-                # though usually we want to trigger missed jobs. We'll stick to now_local check but with grace.
-                if cand_local <= now_local - timedelta(minutes=1):
                     continue
 
             return cand_local.astimezone(UTC)

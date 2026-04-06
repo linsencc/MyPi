@@ -64,8 +64,16 @@ export function EditSceneDialog({
   const [formScheduledClock, setFormScheduledClock] = useState("09:00:00")
   const [formWeekdays, setFormWeekdays] = useState<number[]>(() => [...WEEKDAY_PRESETS.daily])
 
+  const lastSyncedId = useRef<string | null>(null)
+
   useEffect(() => {
-    if (!open || !scene) return
+    if (!open || !scene) {
+      lastSyncedId.current = null
+      return
+    }
+    if (lastSyncedId.current === scene.id) return
+    lastSyncedId.current = scene.id
+
     const plugLabel =
       templates.find((t) => t.templateId === scene.templateId)?.displayName ?? scene.templateId
     setName((scene.name || "").trim() || plugLabel)
@@ -162,11 +170,11 @@ export function EditSceneDialog({
           <Tooltip>
             <TooltipTrigger asChild>
               <DialogTitle className="truncate text-left text-[17px] font-semibold tracking-tight text-slate-900">
-                {scene ? pluginDisplayName : "—"}
+                {scene ? (scene.id ? pluginDisplayName : "创建新场景") : "—"}
               </DialogTitle>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-[min(20rem,calc(100vw-3rem))] break-words">
-              编辑绘画模版
+              {scene?.id ? "编辑绘画模版" : "配置并创建新场景"}
             </TooltipContent>
           </Tooltip>
         </DialogHeader>
@@ -342,7 +350,7 @@ export function EditSceneDialog({
           </div>
 
           <div className="relative z-40 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/50 bg-slate-50/95 px-6 py-3.5">
-            {onDelete && scene ? (
+            {onDelete && scene?.id ? (
               <Button
                 type="button"
                 variant="ghost"

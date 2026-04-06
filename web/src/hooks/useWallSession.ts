@@ -37,6 +37,7 @@ export function useWallSession() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [frameDialogOpen, setFrameDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   const { busyId: rowBusyId, withCooldown } = useRowCooldown(ROW_COOLDOWN_MS)
@@ -210,19 +211,36 @@ export function useWallSession() {
     [wallState, scenes, wallRuns]
   )
 
-  const editingScene = useMemo(
-    () => (editingId ? (scenes.find((s) => s.id === editingId) ?? null) : null),
-    [editingId, scenes]
-  )
+  const editingScene = useMemo(() => {
+    if (editingId) return scenes.find((s) => s.id === editingId) ?? null
+    if (pendingTemplateId) {
+      return {
+        id: "", // No ID yet
+        name: "",
+        description: "",
+        enabled: true,
+        templateId: pendingTemplateId,
+        templateParams: {},
+        schedule: { type: "interval", intervalSeconds: 3600 },
+        previewImageUrl: null,
+        tieBreakPriority: 9,
+      } as Scene
+    }
+    return null
+  }, [editingId, pendingTemplateId, scenes])
 
   const openEdit = useCallback((id: string) => {
     setEditingId(id)
+    setPendingTemplateId(null)
     setEditDialogOpen(true)
   }, [])
 
   const handleEditDialogOpenChange = useCallback((open: boolean) => {
     setEditDialogOpen(open)
-    if (!open) setEditingId(null)
+    if (!open) {
+      setEditingId(null)
+      setPendingTemplateId(null)
+    }
   }, [])
 
   const commitFrameDialog = useCallback(
@@ -248,30 +266,17 @@ export function useWallSession() {
   )
 
   const handleSceneCreate = useCallback(
-    async (templateId: string) => {
-      try {
-        const newScene = await createScene({ templateId } as Partial<Scene>)
-        setConfig((c) =>
-          c
-            ? {
-                ...c,
-                scenes: [...c.scenes, newScene],
-              }
-            : c
-        )
-        showToast("场景已创建")
-        openEdit(newScene.id)
-        await refresh()
-      } catch (e) {
-        const msg = e instanceof ApiError ? e.message : "创建失败"
-        showToast(msg)
-      }
+    (templateId: string) => {
+      setPendingTemplateId(templateId)
+      setEditingId(null)
+      setEditDialogOpen(true)
     },
-    [refresh, showToast, openEdit]
+    []
   )
 
   const handleSceneDelete = useCallback(
     async (id: string) => {
+      if (!id) return // New scene
       try {
         await deleteScene(id)
         setConfig((c) =>
@@ -294,6 +299,7 @@ export function useWallSession() {
 
   const handleSceneToggle = useCallback(
     async (scene: Scene, enabled: boolean) => {
+      if (!scene.id) return // Should not happen for toggle
       const next = { ...scene, enabled }
       try {
         const saved = await putScene(next.id, next)
@@ -316,16 +322,17 @@ export function useWallSession() {
   const handleSceneSave = useCallback(
     async (next: Scene) => {
       try {
-        const saved = await putScene(next.id, next)
+        const isNew = !next.id
+        const saved = isNew ? await createScene(next) : await putScene(next.id, next)
         setConfig((c) =>
           c
             ? {
                 ...c,
-                scenes: c.scenes.map((s) => (s.id === saved.id ? saved : s)),
+                scenes: isNew ? [...c.scenes, saved] : c.scenes.map((s) => (s.id === saved.id ? saved : s)),
               }
             : c
         )
-        showToast("场景已保存")
+        showToast(isNew ? "场景已创建" : "场景已保存")
         await refresh()
       } catch (e) {
         const msg = e instanceof ApiError ? e.message : "保存失败"

@@ -119,6 +119,19 @@ def main() -> int:
     else:
         print("OK TC-S7 global_min_next earliest scene")
 
+    # TC-S10: cron with last_shown on a prior week — slot a few minutes ago must still be the next fire
+    # (regression: old logic skipped cand_local <= now-1min and jumped to the next weekday)
+    sc_mon = _scene_cron([1, 2, 3, 4, 5], "10:00")
+    last_prev_week = datetime(2026, 3, 30, 2, 0, 0, tzinfo=UTC)  # Mon 10:00 CST prior week
+    mon_1003_utc = datetime(2026, 4, 6, 2, 3, 0, tzinfo=UTC)  # Mon 10:03 CST same week
+    nxt_late = next_fire_time(sc_mon, last_prev_week, mon_1003_utc, tz)
+    expect_mon_slot = datetime(2026, 4, 6, 2, 0, 0, tzinfo=UTC)  # Mon 10:00 CST
+    if nxt_late != expect_mon_slot:
+        print("FAIL TC-S10 cron late same-day slot", nxt_late, "!=", expect_mon_slot)
+        fails += 1
+    else:
+        print("OK TC-S10 cron_weekly last week -> same Mon 10:00 even if now past slot")
+
     # --- Integration: wall/state upcoming shape ---
     from app.factory import create_app
 
