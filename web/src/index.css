@@ -53,12 +53,12 @@
 
 @keyframes timeline-pulse {
   0%, 100% {
-    transform: scale(1);
+    transform: translateZ(0) scale(1);
     opacity: 1;
     box-shadow: 0 0 0 0px rgb(0 113 227 / 0.2), 0 0 0 0px rgb(0 113 227 / 0.1);
   }
   50% {
-    transform: scale(1.12);
+    transform: translateZ(0) scale(1.12);
     opacity: 0.95;
     box-shadow: 0 0 0 8px rgb(0 113 227 / 0), 0 0 0 16px rgb(0 113 227 / 0);
   }
@@ -237,8 +237,8 @@
     height: 0;
   }
 
-  .timeline-axis-line {
-    transition: background 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  .timeline-item {
+    view-transition-name: var(--vt-name);
   }
 
   /* 视口上下线性渐隐：内容滚入/滚出时削弱硬切边 */

@@ -1,11 +1,10 @@
 import {
   memo,
-  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
+  forwardRef,
 } from "react"
 
 import type { WallRun, UpcomingItem } from "@/types/api"
@@ -64,13 +63,13 @@ type Row = {
 
 type DotKind = "past" | "playing" | "upcoming"
 
+const TIMELINE_DOT_RING_PAGE = "ring-2 ring-slate-100"
+
 function dotClass(kind: DotKind, ok: boolean): string {
-  const ringPage = "ring-2 ring-slate-100"
+  const ringPage = TIMELINE_DOT_RING_PAGE
   if (kind === "playing") {
-    return cn(
-      "h-3 w-3 rounded-full bg-[var(--color-primary)] animate-timeline-pulse",
-      ringPage
-    )
+    /* ring 在外层包裹上，避免与 animate-timeline-pulse 的 box-shadow 关键帧互斥 */
+    return "block h-3 w-3 rounded-full bg-[var(--color-primary)] animate-timeline-pulse"
   }
   if (kind === "upcoming") {
     return cn(
@@ -97,109 +96,125 @@ const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
 const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
 const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
 
-const TimelineRowItem = memo(function TimelineRowItem({
-  row,
-  index,
-  totalRows,
-  nowMs,
-  kind,
-}: {
-  row: Row
-  index: number
-  totalRows: number
-  nowMs: number
-  kind: DotKind
-}) {
-  const iso = new Date(row.endMs).toISOString()
-  const datePart = formatDatePart(row.endMs, nowMs)
-  const relHint = formatRelativeHint(row.endMs, nowMs)
-  const clock = formatClock(row.endMs)
-  const isPast = kind === "past"
+const TimelineRowItem = memo(
+  forwardRef<HTMLLIElement, {
+    row: Row
+    index: number
+    totalRows: number
+    nowMs: number
+    kind: DotKind
+  }>(function TimelineRowItem({
+    row,
+    index,
+    totalRows,
+    nowMs,
+    kind,
+  }, ref) {
+    const iso = new Date(row.endMs).toISOString()
+    const datePart = formatDatePart(row.endMs, nowMs)
+    const relHint = formatRelativeHint(row.endMs, nowMs)
+    const clock = formatClock(row.endMs)
 
-  return (
-    <li
-      data-playing={kind === "playing" ? "true" : undefined}
-      className={cn(
-        "grid items-center gap-0 py-1.5 transition-all duration-400 ease-out",
-        TIMELINE_ROW_MIN_H,
-        kind === "playing" ? "bg-blue-600/[0.035]" : "hover:bg-slate-200/[0.09]",
-        isPast && "opacity-[0.93]",
-        index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
-      )}
-      style={{ gridTemplateColumns: TIMELINE_GRID_COLS }}
-    >
-      <time
-        dateTime={iso}
-        className={cn(
-          "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
-          "min-w-0 pr-2 text-[11px] leading-snug tracking-tight sm:text-xs",
-          kind === "playing"
-            ? "text-slate-600"
-            : kind === "upcoming"
-              ? "text-slate-400"
-              : "text-slate-400/75"
-        )}
+    return (
+      <li
+        ref={ref}
+        data-playing={kind === "playing" ? "true" : undefined}
+        className={cn("overflow-hidden", kind === "past" && "opacity-[0.93]")}
       >
-        <span className="leading-tight">
-          {datePart}
-          <span
-            className={cn(
-              kind === "playing"
-                ? "text-slate-500"
-                : kind === "upcoming"
-                  ? "text-slate-400/85"
-                  : "text-slate-400/65"
-            )}
-          >
-            {" "}
-            {relHint}
-          </span>
-        </span>
-        <span className="inline-flex items-baseline gap-x-1 leading-none">
-          <span
-            className={cn(
-              kind === "playing"
-                ? "text-slate-300"
-                : kind === "upcoming"
-                  ? "text-slate-300/70"
-                  : "text-slate-300/55"
-            )}
-            aria-hidden
-          >
-            ·
-          </span>
-          <span
-            className={cn(
-              "font-mono tabular-nums",
-              kind === "playing"
-                ? "text-slate-800"
-                : kind === "upcoming"
-                  ? "text-slate-500"
-                  : "text-slate-500/75"
-            )}
-          >
-            {clock}
-          </span>
-        </span>
-      </time>
-      <div className="relative z-[2] flex w-full items-center justify-center self-stretch bg-transparent">
-        <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
-      </div>
-      <span
+      <div
         className={cn(
-          "min-w-0 truncate pl-2 text-[13px]",
-          kind === "playing"
-            ? "font-medium text-slate-900"
-            : kind === "upcoming"
+          "grid items-center gap-0 py-1.5",
+          TIMELINE_ROW_MIN_H,
+          kind === "playing" ? "bg-blue-600/[0.035]" : "hover:bg-slate-200/[0.09]",
+          index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
+        )}
+        style={{ gridTemplateColumns: TIMELINE_GRID_COLS }}
+      >
+        <time
+          dateTime={iso}
+          className={cn(
+            "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
+            "min-w-0 pr-2 text-[11px] leading-snug tracking-tight sm:text-xs",
+            kind === "playing"
               ? "text-slate-600"
-              : "text-slate-500/95"
-        )}
-      >
-        {row.sceneName}
-      </span>
+              : kind === "upcoming"
+                ? "text-slate-400"
+                : "text-slate-400/75"
+          )}
+        >
+          <span className="leading-tight">
+            {datePart}
+            <span
+              className={cn(
+                kind === "playing"
+                  ? "text-slate-500"
+                  : kind === "upcoming"
+                    ? "text-slate-400/85"
+                    : "text-slate-400/65"
+              )}
+            >
+              {" "}
+              {relHint}
+            </span>
+          </span>
+          <span className="inline-flex items-baseline gap-x-1 leading-none">
+            <span
+              className={cn(
+                kind === "playing"
+                  ? "text-slate-300"
+                  : kind === "upcoming"
+                    ? "text-slate-300/70"
+                    : "text-slate-300/55"
+              )}
+              aria-hidden
+            >
+              ·
+            </span>
+            <span
+              className={cn(
+                "font-mono tabular-nums",
+                kind === "playing"
+                  ? "text-slate-800"
+                  : kind === "upcoming"
+                    ? "text-slate-500"
+                    : "text-slate-500/75"
+              )}
+            >
+              {clock}
+            </span>
+          </span>
+        </time>
+        <div className="relative z-[2] flex w-full items-center justify-center self-stretch bg-transparent">
+          {kind === "playing" ? (
+            <span
+              className={cn(
+                "relative z-[1] inline-flex shrink-0 rounded-full",
+                TIMELINE_DOT_RING_PAGE
+              )}
+              aria-hidden
+            >
+              <span className={dotClass(kind, row.ok)} />
+            </span>
+          ) : (
+            <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
+          )}
+        </div>
+        <span
+          className={cn(
+            "min-w-0 truncate pl-2 text-[13px]",
+            kind === "playing"
+              ? "font-medium text-slate-900"
+              : kind === "upcoming"
+                ? "text-slate-600"
+                : "text-slate-500/95"
+          )}
+        >
+          {row.sceneName}
+        </span>
+      </div>
     </li>
   )
-})
+}))
 
 export function WallRunsTimeline({
   runs,
@@ -271,53 +286,12 @@ export function WallRunsTimeline({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
-  const isFirstRender = useRef(true)
-  const idleTimerRef = useRef<number | null>(null)
-  const [overflowY, setOverflowY] = useState(false)
+  const [, setOverflowY] = useState(false)
 
-  const centerActiveNode = useCallback((behavior: ScrollBehavior) => {
-    const container = scrollRef.current
-    if (!container) return
-    const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
-    if (!activeEl) return
+  // Remove centerActiveNode entirely since it's causing scrolling jumpiness
 
-    const containerRect = container.getBoundingClientRect()
-    const elRect = activeEl.getBoundingClientRect()
-    const relativeTop = elRect.top - containerRect.top + container.scrollTop
-    const targetTop = relativeTop - container.clientHeight / 2 + elRect.height / 2
-    
-    container.scrollTo({ top: targetTop, behavior })
-  }, [])
-
-  const resetIdleTimer = useCallback(() => {
-    if (idleTimerRef.current !== null) {
-      window.clearTimeout(idleTimerRef.current)
-      idleTimerRef.current = null
-    }
-    if (!scrollRef.current) return
-    
-    idleTimerRef.current = window.setTimeout(() => {
-      const container = scrollRef.current
-      if (!container) return
-      const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
-      if (!activeEl) return
-      
-      const containerRect = container.getBoundingClientRect()
-      const elRect = activeEl.getBoundingClientRect()
-      
-      if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
-        centerActiveNode("smooth")
-      }
-    }, 3000)
-  }, [centerActiveNode])
-
-  const clearIdleTimer = useCallback(() => {
-    if (idleTimerRef.current !== null) {
-      window.clearTimeout(idleTimerRef.current)
-      idleTimerRef.current = null
-    }
-  }, [])
-
+  // Remove resetIdleTimer, clearIdleTimer, and related logic that forces scrolling
+  
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el || showEmptyHistory) {
@@ -331,73 +305,31 @@ export function WallRunsTimeline({
     return () => ro.disconnect()
   }, [rows, showEmptyHistory])
 
-  const dragRef = useRef<{
-    pointerId: number | null
-    startY: number
-    startScroll: number
-    dragging: boolean
-  }>({ pointerId: null, startY: 0, startScroll: 0, dragging: false })
-
-  useLayoutEffect(() => {
-    if (playingAnchor) {
-      const behavior = isFirstRender.current ? "auto" : "smooth"
-      if (!dragRef.current.dragging) {
-        centerActiveNode(behavior)
-      }
-    }
-    isFirstRender.current = false
-  }, [playingAnchor?.key, rows, centerActiveNode])
-
-  const onPointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (!overflowY || e.button !== 0) return
-      if (e.pointerType === "touch") return
-      const el = scrollRef.current
-      const target = listContainerRef.current
-      if (!el || !target) return
-      clearIdleTimer()
-      dragRef.current = {
-        pointerId: e.pointerId,
-        startY: e.clientY,
-        startScroll: el.scrollTop,
-        dragging: false,
-      }
-      try {
-        target.setPointerCapture(e.pointerId)
-      } catch {
-        /* ignore */
-      }
-    },
-    [overflowY, clearIdleTimer]
-  )
-
-  const onPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (d.pointerId !== e.pointerId || !scrollRef.current) return
-    const dy = e.clientY - d.startY
-    if (!d.dragging && Math.abs(dy) > 6) d.dragging = true
-    if (d.dragging) {
-      e.preventDefault()
-      scrollRef.current.scrollTop = d.startScroll - dy
-    }
-  }, [])
-
-  const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (d.pointerId !== e.pointerId) return
-    try {
-      listContainerRef.current?.releasePointerCapture(e.pointerId)
-    } catch {
-      /* ignore */
-    }
-    dragRef.current = { pointerId: null, startY: 0, startScroll: 0, dragging: false }
-    resetIdleTimer()
-  }, [resetIdleTimer])
+  // Remove drag/pointer event handling logic since we are just using native scrolling now
 
   const playingRowIndex = useMemo(() => {
     if (!playingAnchor) return -1
     return rows.findIndex((r) => r.key === playingAnchor.key)
   }, [rows, playingAnchor])
+
+  useLayoutEffect(() => {
+    if (!playingAnchor) return
+    const container = scrollRef.current
+    if (!container) return
+
+    const frame = requestAnimationFrame(() => {
+      const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
+      if (!activeEl) return
+
+      const containerRect = container.getBoundingClientRect()
+      const elRect = activeEl.getBoundingClientRect()
+      const relativeTop = elRect.top - containerRect.top + container.scrollTop
+      const targetTop = relativeTop - container.clientHeight / 2 + elRect.height / 2
+      container.scrollTop = targetTop
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [playingAnchor?.key])
 
   const axisLineBackground = useMemo(() => {
     const n = rows.length
@@ -459,12 +391,6 @@ export function WallRunsTimeline({
         ) : (
           <div
             ref={scrollRef}
-            onScroll={() => {
-              clearIdleTimer()
-              if (!dragRef.current.dragging) {
-                resetIdleTimer()
-              }
-            }}
             className={cn(
               "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
               TIMELINE_VIEWPORT_H
@@ -473,10 +399,6 @@ export function WallRunsTimeline({
             <div
               className="relative pr-12 lg:pr-16"
               ref={listContainerRef}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
             >
               <div
                 aria-hidden
