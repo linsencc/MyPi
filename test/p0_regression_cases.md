@@ -50,7 +50,7 @@
   * **预期**：AI 代理应通过 `netstat` / `kill` 等 shell 指令自行排查并解决环境问题，而非向用户索要指令。
 
 ### 6.2 自动化回归脚本 (Automated Regression Test)
-* **TC-6.2.1 脚本执行 (Puppeteer)**：运行 `test/regression.js` 自动化脚本。
+* **TC-6.2.1 脚本执行 (Puppeteer)**：在仓库根目录保证后端 **5050** 与 Web **5173** 已启动后，于 `test/` 目录执行 `npm install`（首次）与 `node regression.js`。依赖解析以 `test/package.json` 为准，勿从 `web/` 目录直接 `node ../test/regression.js`（Node 无法解析 `web/node_modules` 中的 `puppeteer`）。
   * **预期**：脚本应能自动完成 P0 核心链路（加载、立即渲染、创建、开关、删除）的断言，并在控制台输出 `[PASS]`。
 * **TC-6.2.2 临时文件清理 (Cleanup)**：自动化运行后。
   * **预期**：测试过程中产生的临时截图（如 `test_step*.png`）在验证完成后应被自动清理，避免污染 Git 仓库。

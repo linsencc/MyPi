@@ -1,5 +1,6 @@
 import {
   memo,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -93,8 +94,41 @@ function dotClass(kind: DotKind, ok: boolean): string {
 const TIMELINE_ROW_MIN_H = "min-h-[2.625rem]"
 const TIMELINE_SIX_ROWS_MIN_H = "min-h-[15.75rem]"
 const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
-const TIMELINE_GRID_COLS = "8rem 1.25rem minmax(0, 1fr)" as const
+/** 第三列不用 1fr，避免在宽屏上占满整行导致右侧大片空白仍落在 overflow 区域内抢手势 */
+const TIMELINE_GRID_COLS =
+  "8rem 1.25rem minmax(0, min(15rem, 60vw))" as const
 const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
+
+/** 与 `.timeline-viewport-mask` 上下渐隐带大致对齐（约 0.85rem） */
+const TIMELINE_VIEWPORT_MASK_INSET_PX = 14
+/** 时间轴上无滚动手势/触摸等超过此时长后，才自动将激活行滚回中间 */
+const TIMELINE_RECENTER_IDLE_MS = 3000
+
+function scrollTimelinePlayingRowToCenter(container: HTMLDivElement): void {
+  const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
+  if (!activeEl) return
+  const containerRect = container.getBoundingClientRect()
+  const elRect = activeEl.getBoundingClientRect()
+  const relativeTop = elRect.top - containerRect.top + container.scrollTop
+  const targetTop = relativeTop - container.clientHeight / 2 + elRect.height / 2
+  container.scrollTop = targetTop
+}
+
+/** 激活行在渐隐/裁切区内，或纵向偏离视口中心超过比例时，需要重新居中 */
+function timelinePlayingRowNeedsRecenter(container: HTMLDivElement): boolean {
+  const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
+  if (!activeEl) return false
+  const cr = container.getBoundingClientRect()
+  const er = activeEl.getBoundingClientRect()
+  const inset = TIMELINE_VIEWPORT_MASK_INSET_PX
+  const inMaskOrClipped =
+    er.top < cr.top + inset || er.bottom > cr.bottom - inset
+  const viewMid = (cr.top + cr.bottom) / 2
+  const rowMid = (er.top + er.bottom) / 2
+  const offCenter =
+    Math.abs(rowMid - viewMid) > container.clientHeight * 0.1
+  return inMaskOrClipped || offCenter
+}
 
 const TimelineRowItem = memo(
   forwardRef<HTMLLIElement, {
@@ -286,7 +320,17 @@ export function WallRunsTimeline({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
+  /** 为 true 时忽略 scroll，避免程序化 scrollTop 重置「空闲计时」 */
+  const timelineProgrammaticScrollRef = useRef(false)
   const [, setOverflowY] = useState(false)
+
+  function scrollTimelinePlayingRowAsSystem(container: HTMLDivElement) {
+    timelineProgrammaticScrollRef.current = true
+    scrollTimelinePlayingRowToCenter(container)
+    requestAnimationFrame(() => {
+      timelineProgrammaticScrollRef.current = false
+    })
+  }
 
   // Remove centerActiveNode entirely since it's causing scrolling jumpiness
 
@@ -318,18 +362,72 @@ export function WallRunsTimeline({
     if (!container) return
 
     const frame = requestAnimationFrame(() => {
-      const activeEl = container.querySelector<HTMLElement>('[data-playing="true"]')
-      if (!activeEl) return
-
-      const containerRect = container.getBoundingClientRect()
-      const elRect = activeEl.getBoundingClientRect()
-      const relativeTop = elRect.top - containerRect.top + container.scrollTop
-      const targetTop = relativeTop - container.clientHeight / 2 + elRect.height / 2
-      container.scrollTop = targetTop
+      scrollTimelinePlayingRowAsSystem(container)
     })
 
     return () => cancelAnimationFrame(frame)
   }, [playingAnchor?.key])
+
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container || showEmptyHistory || playingAnchor == null) return
+
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearIdleTimer = () => {
+      if (idleTimer != null) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
+    }
+
+    const runIdleRecenter = () => {
+      const el = scrollRef.current
+      if (!el) return
+      if (!timelinePlayingRowNeedsRecenter(el)) return
+      scrollTimelinePlayingRowAsSystem(el)
+    }
+
+    /** 每次用户手势都取消上一段空闲计时，从「此刻」重新计 3s */
+    const rescheduleIdleRecenterFromUserGesture = () => {
+      clearIdleTimer()
+      idleTimer = setTimeout(() => {
+        idleTimer = null
+        runIdleRecenter()
+      }, TIMELINE_RECENTER_IDLE_MS)
+    }
+
+    const onGesture = () => {
+      if (timelineProgrammaticScrollRef.current) {
+        /* 系统改 scrollTop 触发的 scroll：取消待执行的复位，避免与用户空闲计时打架 */
+        clearIdleTimer()
+        return
+      }
+      rescheduleIdleRecenterFromUserGesture()
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.buttons === 0) return
+      onGesture()
+    }
+
+    container.addEventListener("scroll", onGesture, { passive: true })
+    container.addEventListener("touchstart", onGesture, { passive: true })
+    container.addEventListener("touchmove", onGesture, { passive: true })
+    container.addEventListener("pointerdown", onGesture, { passive: true })
+    container.addEventListener("pointermove", onPointerMove, { passive: true })
+    container.addEventListener("wheel", onGesture, { passive: true })
+
+    return () => {
+      clearIdleTimer()
+      container.removeEventListener("scroll", onGesture)
+      container.removeEventListener("touchstart", onGesture)
+      container.removeEventListener("touchmove", onGesture)
+      container.removeEventListener("pointerdown", onGesture)
+      container.removeEventListener("pointermove", onPointerMove)
+      container.removeEventListener("wheel", onGesture)
+    }
+  }, [playingAnchor?.key, showEmptyHistory])
 
   const axisLineBackground = useMemo(() => {
     const n = rows.length
@@ -392,12 +490,12 @@ export function WallRunsTimeline({
           <div
             ref={scrollRef}
             className={cn(
-              "timeline-scroll-hide timeline-viewport-mask relative touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
+              "timeline-scroll-hide timeline-viewport-mask relative w-max min-w-0 max-w-full touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
               TIMELINE_VIEWPORT_H
             )}
           >
             <div
-              className="relative pr-12 lg:pr-16"
+              className="relative w-max min-w-0 max-w-full pr-12 lg:pr-16"
               ref={listContainerRef}
             >
               <div
@@ -408,7 +506,12 @@ export function WallRunsTimeline({
                   background: axisLineBackground,
                 }}
               />
-              <ol className={cn("relative z-[1] m-0 list-none pb-1", TIMELINE_SIX_ROWS_MIN_H)}>
+              <ol
+                className={cn(
+                  "relative z-[1] m-0 w-max min-w-0 max-w-full list-none pb-1",
+                  TIMELINE_SIX_ROWS_MIN_H
+                )}
+              >
                 {rows.map((row, index) => (
                   <TimelineRowItem
                     key={row.key}

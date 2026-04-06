@@ -1,0 +1,8 @@
+{
+  "name": "mypi-test",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "puppeteer": "^24.40.0"
+  }
+}
