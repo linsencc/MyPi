@@ -48,6 +48,20 @@
   --animate-spin-around: spin-around 6s linear infinite;
   --animate-gradient: gradient 8s linear infinite;
   --animate-preview-fade-in: preview-fade-in 0.4s ease-out both;
+  --animate-timeline-pulse: timeline-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes timeline-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0px rgb(0 113 227 / 0.2), 0 0 0 0px rgb(0 113 227 / 0.1);
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.95;
+    box-shadow: 0 0 0 8px rgb(0 113 227 / 0), 0 0 0 16px rgb(0 113 227 / 0);
+  }
 }
 
 @keyframes preview-fade-in {
@@ -221,6 +235,10 @@
     display: none;
     width: 0;
     height: 0;
+  }
+
+  .timeline-axis-line {
+    transition: background 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   /* 视口上下线性渐隐：内容滚入/滚出时削弱硬切边 */

@@ -68,8 +68,7 @@ function dotClass(kind: DotKind, ok: boolean): string {
   const ringPage = "ring-2 ring-slate-100"
   if (kind === "playing") {
     return cn(
-      "h-3 w-3 rounded-full bg-[var(--color-primary)]",
-      "shadow-[0_0_0_3px_rgb(0_113_227/0.14),0_0_18px_5px_rgb(0_113_227/0.1),0_0_32px_8px_rgb(0_113_227/0.05),0_0_44px_14px_rgb(0_113_227/0.035)]",
+      "h-3 w-3 rounded-full bg-[var(--color-primary)] animate-timeline-pulse",
       ringPage
     )
   }
@@ -121,9 +120,9 @@ const TimelineRowItem = memo(function TimelineRowItem({
     <li
       data-playing={kind === "playing" ? "true" : undefined}
       className={cn(
-        "grid items-center gap-0 py-1.5",
+        "grid items-center gap-0 py-1.5 transition-all duration-400 ease-out",
         TIMELINE_ROW_MIN_H,
-        "transition-[background-color,opacity] duration-150 hover:bg-slate-200/[0.09]",
+        kind === "playing" ? "bg-blue-600/[0.035]" : "hover:bg-slate-200/[0.09]",
         isPast && "opacity-[0.93]",
         index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
       )}
@@ -219,34 +218,30 @@ export function WallRunsTimeline({
     const list: Row[] = []
     
     // Add upcoming items
-    let uId = 0
     const limitedUpcoming = upcoming.slice(0, 10)
     for (const u of limitedUpcoming) {
       const endMs = Date.parse(u.at)
       if (Number.isNaN(endMs)) continue
       list.push({
-        key: `upcoming-${u.sceneId}-${uId}`,
+        key: `upcoming-${u.sceneId}-${u.at}`,
         sceneId: u.sceneId,
         sceneName: u.name || sceneNames[u.sceneId] || u.sceneId,
         endMs,
         ok: true, // Upcoming is assumed ok
       })
-      uId++
     }
 
     // Add historical runs
-    let i = 0
     for (const run of runs) {
       const endMs = runEndMs(run)
       if (endMs == null) continue
       list.push({
-        key: `${run.id}-${i}`,
+        key: run.id,
         sceneId: run.sceneId,
         sceneName: run.sceneName || sceneNames[run.sceneId] || run.sceneId,
         endMs,
         ok: run.ok,
       })
-      i += 1
     }
 
     list.sort((a, b) => b.endMs - a.endMs)
@@ -351,7 +346,7 @@ export function WallRunsTimeline({
       }
     }
     isFirstRender.current = false
-  }, [playingAnchor?.key, centerActiveNode])
+  }, [playingAnchor?.key, rows, centerActiveNode])
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -485,7 +480,7 @@ export function WallRunsTimeline({
             >
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
+                className="timeline-axis-line pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
                 style={{
                   left: TIMELINE_AXIS_CENTER_LEFT,
                   background: axisLineBackground,

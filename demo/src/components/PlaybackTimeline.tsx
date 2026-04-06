@@ -73,9 +73,7 @@ function dotClass(kind: DotKind, ok: boolean): string {
   const ringPage = "ring-2 ring-slate-100"
   if (kind === "playing") {
     return cn(
-      "h-3 w-3 rounded-full bg-[var(--color-primary)]",
-      /* 内圈强调 + 极弱外发光（呼吸感） */
-      "shadow-[0_0_0_3px_rgb(0_113_227/0.14),0_0_18px_5px_rgb(0_113_227/0.1),0_0_32px_8px_rgb(0_113_227/0.05),0_0_44px_14px_rgb(0_113_227/0.035)]",
+      "h-3 w-3 rounded-full bg-[var(--color-primary)] animate-timeline-pulse",
       ringPage
     )
   }
@@ -129,9 +127,9 @@ const TimelineRowItem = memo(function TimelineRowItem({
     <li
       data-playing={kind === "playing" ? "true" : undefined}
       className={cn(
-        "grid items-center gap-0 py-1.5",
+        "grid items-center gap-0 py-1.5 transition-all duration-400 ease-out",
         TIMELINE_ROW_MIN_H,
-        "transition-[background-color,opacity] duration-150 hover:bg-slate-200/[0.09]",
+        kind === "playing" ? "bg-blue-600/[0.035]" : "hover:bg-slate-200/[0.09]",
         isPast && "opacity-[0.93]",
         index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
       )}
@@ -224,18 +222,16 @@ export function PlaybackTimeline({
   const rows = useMemo(() => {
     const list: Row[] = []
     for (const u of scenes) {
-      let i = 0
       for (const log of runLogs[u.id] ?? []) {
         const endMs = parseLogInstant(log.end) ?? parseLogInstant(log.start)
         if (endMs == null) continue
         list.push({
-          key: `${u.id}-${log.start}-${log.end}-${i}`,
+          key: `${u.id}-${log.start}-${log.end}`,
           sceneId: u.id,
           sceneName: u.name,
           endMs,
           ok: log.ok,
         })
-        i += 1
       }
     }
     list.sort((a, b) => b.endMs - a.endMs)
@@ -339,7 +335,7 @@ export function PlaybackTimeline({
       }
     }
     isFirstRender.current = false
-  }, [playingAnchor?.key, centerActiveNode])
+  }, [playingAnchor?.key, rows, centerActiveNode])
 
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     if (!overflowY || e.button !== 0) return
@@ -472,7 +468,7 @@ export function PlaybackTimeline({
             >
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
+                className="timeline-axis-line pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
                 style={{
                   left: TIMELINE_AXIS_CENTER_LEFT,
                   background: axisLineBackground,
