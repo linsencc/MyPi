@@ -1,0 +1,34 @@
+[Unit]
+Description=MyPi Digital Frame Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linsen
+Group=linsen
+WorkingDirectory=/home/linsen/workspace/MyPi/server
+
+Environment=PYTHONPATH=/home/linsen/workspace/MyPi/server
+Environment=MYPI_TZ=Asia/Shanghai
+Environment=MYPI_DISPLAY=epd_e6
+Environment=MYPI_BIND=0.0.0.0
+Environment=PORT=5050
+Environment=MYPI_SKIP_PORT_CHECK=1
+
+Environment=MYPI_EPD_SDK=/home/linsen/workspace/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib
+
+ExecStart=/home/linsen/workspace/MyPi/.venv/bin/gunicorn \
+    --bind 0.0.0.0:5050 \
+    --workers 1 \
+    --worker-class gthread \
+    --threads 4 \
+    --timeout 120 \
+    --access-logfile - \
+    wsgi:application
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

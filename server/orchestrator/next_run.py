@@ -5,12 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from domain.models import Scene
-
-
-def _parse_iso(s: str) -> datetime:
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    return datetime.fromisoformat(s)
+from domain.utils import parse_iso as _parse_iso
 
 
 def _js_weekday(d: date) -> int:

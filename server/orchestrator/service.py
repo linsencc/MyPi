@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 import threading
-import queue
-import json
 import logging
 from pathlib import Path
 from collections import deque
@@ -14,19 +12,14 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from domain.models import AppConfig, Scene, UpcomingItem, WallState
+from domain.utils import parse_iso as _parse_iso
 from orchestrator.next_run import future_fire_times, global_min_next, next_fire_time
 from pipeline.wall_show import WallPipeline
 from renderers.registry import TemplateRegistry
-from storage.stores import load_config, load_schedule_state
+from storage.stores import load_config, load_schedule_state, prune_old_data
 from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
-
-
-def _parse_iso(s: str) -> datetime:
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    return datetime.fromisoformat(s)
 
 
 def _resolve_tz(name: str) -> ZoneInfo:
@@ -54,9 +47,8 @@ class WallOrchestrator:
         self._display_active_scene_id: str | None = None
         self._scheduler: BackgroundScheduler | None = None
         self._wall_state = WallState()
-        self._sse_clients: list[queue.Queue] = []
-        self._sse_lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
+        self._drain_count = 0
 
     @property
     def wall_state(self) -> WallState:
@@ -64,29 +56,6 @@ class WallOrchestrator:
 
     def bind_scheduler(self, scheduler: BackgroundScheduler) -> None:
         self._scheduler = scheduler
-
-    def add_sse_client(self) -> queue.Queue:
-        q = queue.Queue(maxsize=10)
-        with self._sse_lock:
-            self._sse_clients.append(q)
-        return q
-
-    def remove_sse_client(self, q: queue.Queue) -> None:
-        with self._sse_lock:
-            if q in self._sse_clients:
-                self._sse_clients.remove(q)
-
-    def _broadcast_event(self, event_type: str, data: dict) -> None:
-        msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-        with self._sse_lock:
-            dead = []
-            for q in self._sse_clients:
-                try:
-                    q.put_nowait(msg)
-                except queue.Full:
-                    dead.append(q)
-            for q in dead:
-                self._sse_clients.remove(q)
 
     def _ensure_drain_worker(self) -> None:
         if self._worker_thread is not None and self._worker_thread.is_alive():
@@ -100,7 +69,7 @@ class WallOrchestrator:
         )
         self._worker_thread.start()
 
-    def _sync_display_fields_and_broadcast(self) -> None:
+    def _sync_display_fields(self) -> None:
         """Lock order: _active_lock, then _q_lock (same order everywhere)."""
         with self._active_lock:
             active = self._display_active_scene_id
@@ -116,9 +85,6 @@ class WallOrchestrator:
             display_active_scene_id=active,
             queued_display_scene_ids=queued,
         )
-        self._broadcast_event(
-            "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
-        )
 
     def enqueue_show_now(self, scene_id: str) -> None:
         with self._q_lock:
@@ -126,7 +92,7 @@ class WallOrchestrator:
             self._immediate.append(scene_id)
             self._ensure_drain_worker()
             self._q_ready.notify()
-        self._sync_display_fields_and_broadcast()
+        self._sync_display_fields()
 
     def enqueue_ephemeral_scene(self, scene: Scene) -> None:
         with self._q_lock:
@@ -135,7 +101,7 @@ class WallOrchestrator:
             self._immediate.append(scene.id)
             self._ensure_drain_worker()
             self._q_ready.notify()
-        self._sync_display_fields_and_broadcast()
+        self._sync_display_fields()
 
     def wakeup(self) -> None:
         cfg = load_config()
@@ -170,10 +136,7 @@ class WallOrchestrator:
         now_after = datetime.now(UTC)
         self._refresh_wall_state(cfg, last_map2, now_after)
 
-        if had_due:
-            self._broadcast_event(
-                "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
-            )
+        # wall_state already refreshed above; frontend polls /wall/state
 
     def _drain_worker_loop(self) -> None:
         while True:
@@ -193,14 +156,19 @@ class WallOrchestrator:
             except Exception:
                 log.exception("Orchestrator: drain worker failed for scene_id=%s", sid)
 
+            self._drain_count += 1
+            if self._drain_count % 10 == 0:
+                try:
+                    prune_old_data()
+                except Exception:
+                    log.exception("Orchestrator: prune_old_data failed")
+
+            cfg_fresh = load_config()
             st2 = load_schedule_state()
             last_map2 = st2.get("lastShownAtBySceneId", {})
             now_after = datetime.now(UTC)
-            self._refresh_wall_state(cfg, last_map2, now_after)
+            self._refresh_wall_state(cfg_fresh, last_map2, now_after)
             self._reschedule_alarm()
-            self._broadcast_event(
-                "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
-            )
 
     def _run_one_scene(self, sid: str, cfg: AppConfig, force: bool) -> None:
         log.info(f"Orchestrator: Preparing to run scene_id={sid} (force={force})")
@@ -215,7 +183,7 @@ class WallOrchestrator:
 
         with self._active_lock:
             self._display_active_scene_id = sid
-        self._sync_display_fields_and_broadcast()
+        self._sync_display_fields()
 
         with self._display_lock:
             run = self._pipeline.run_scene(sc, cfg.frame_tuning, cfg.device_profile)

@@ -4,7 +4,7 @@ import json
 import logging
 import re
 
-from flask import Blueprint, abort, current_app, jsonify, request, send_file, Response
+from flask import Blueprint, current_app, jsonify, request, send_file
 
 from domain.models import AppConfig, Scene
 from storage.stores import load_config, save_config
@@ -63,9 +63,6 @@ def create_scene():
         
     if "schedule" not in raw:
         raw["schedule"] = {"type": "interval", "intervalSeconds": 3600}
-        
-    if "schedule" not in raw:
-        raw["schedule"] = {"type": "interval", "intervalSeconds": 3600}
 
     try:
         new_scene = Scene.model_validate(raw)
@@ -83,7 +80,7 @@ def create_scene():
     save_config(cfg)
     log.info(f"API: Created scene {new_scene.id}")
     _orch().wakeup()
-    return jsonify(new_scene.model_dump(mode="json", by_alias=True))
+    return jsonify(new_scene.model_dump(mode="json", by_alias=True)), 201
 
 
 @bp.get("/scenes/<scene_id>")
@@ -99,7 +96,10 @@ def get_scene(scene_id: str):
 def put_scene(scene_id: str):
     cfg = load_config()
     raw = request.get_json(force=True, silent=False)
-    new = Scene.model_validate(raw)
+    try:
+        new = Scene.model_validate(raw)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
     if new.id != scene_id:
         return jsonify({"error": "id mismatch"}), 400
     idx = next((i for i, s in enumerate(cfg.scenes) if s.id == scene_id), None)
@@ -195,24 +195,6 @@ def wall_state():
     return jsonify(st.model_dump(mode="json", by_alias=True))
 
 
-@bp.get("/wall/events")
-def wall_events():
-    orch = _orch()
-    def event_stream():
-        q = orch.add_sse_client()
-        try:
-            while True:
-                msg = q.get()
-                yield msg
-        except GeneratorExit:
-            orch.remove_sse_client(q)
-            
-    response = Response(event_stream(), mimetype="text/event-stream")
-    # Need to add headers to prevent buffering in proxies/web servers
-    response.headers['Cache-Control'] = 'no-cache'
-    response.headers['X-Accel-Buffering'] = 'no'
-    return response
-
 
 @bp.get("/output/<run_id>/<filename>")
 def output_image(run_id: str, filename: str):
@@ -220,15 +202,15 @@ def output_image(run_id: str, filename: str):
     from storage.paths import output_dir
 
     if not _RUN_ID_RE.match(run_id) or not _OUTPUT_NAME_RE.match(filename):
-        abort(404)
+        return jsonify({"error": "not found"}), 404
     root = output_dir().resolve()
     p = (root / run_id / filename).resolve()
     try:
         p.relative_to(root)
     except ValueError:
-        abort(404)
+        return jsonify({"error": "not found"}), 404
     if not p.is_file():
-        abort(404)
+        return jsonify({"error": "not found"}), 404
     return send_file(p, mimetype="image/png")
 
 

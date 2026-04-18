@@ -1,0 +1,67 @@
+---
+description: MyPi 开发→树莓派部署的标准流程。修改 server/ 或 web/ 后需同步到 Pi。
+alwaysApply: true
+---
+
+# MyPi 部署流程
+
+## 架构
+
+```
+开发机 (Windows)            树莓派 (linsen@192.168.1.118)
+─────────────────           ─────────────────────────────
+MyPi/server/  ──scp──►     ~/workspace/MyPi/server/
+MyPi/web/src/ ──build──►   ~/workspace/MyPi/web/dist/
+MyPi/deploy/  ──scp──►     ~/workspace/MyPi/deploy/
+```
+
+- **SSH 已免密配置**，可直接 `ssh linsen@192.168.1.118`
+- Pi 上**没有 git 仓库**，代码通过 scp 推送
+- Pi 上**没有前端源码**，只有 `web/dist/` 构建产物
+- 后端由 systemd 管理：`mypi.service`（gunicorn gthread）
+
+## 部署步骤
+
+### 1. 推送后端文件（逐个 scp）
+
+```powershell
+scp "server\<file>" linsen@192.168.1.118:~/workspace/MyPi/server/<file>
+```
+
+新文件需确认目标目录存在：`ssh linsen@192.168.1.118 "mkdir -p ~/workspace/MyPi/server/<dir>"`
+
+### 2. 推送前端（本地构建后推 dist）
+
+```powershell
+# 在 web/ 下构建
+npm run build
+# 推送并原子替换
+scp -r "web\dist" linsen@192.168.1.118:~/workspace/MyPi/web/dist_new
+ssh linsen@192.168.1.118 "cd ~/workspace/MyPi/web && rm -rf dist_old && mv dist dist_old && mv dist_new dist"
+```
+
+### 3. 重启服务
+
+```powershell
+ssh linsen@192.168.1.118 "sudo systemctl restart mypi.service"
+```
+
+### 4. 验证
+
+```powershell
+# 服务状态
+ssh linsen@192.168.1.118 "sudo systemctl status mypi.service --no-pager -l"
+# 前端可访问
+ssh linsen@192.168.1.118 "curl -s -o /dev/null -w '%{http_code}' http://localhost:5050/"
+# API 正常
+ssh linsen@192.168.1.118 "curl -s http://localhost:5050/api/v1/config | python3 -m json.tool"
+# 最近日志
+ssh linsen@192.168.1.118 "sudo journalctl -u mypi --no-pager -n 20"
+```
+
+## 注意事项
+
+- `server/data/config.json` 是运行时状态文件，推送会**覆盖**用户在 Web UI 的配置，谨慎操作
+- 更新 `deploy/mypi.service` 后需额外执行 `sudo cp ... /etc/systemd/system/ && sudo systemctl daemon-reload`
+- Pi 是 Raspberry Pi Zero 2 W，资源有限；e-ink 刷新约 27 秒属正常
+- Pi 上的 Python venv 在 `~/workspace/MyPi/.venv/`，新增 pip 依赖需 SSH 进去安装

@@ -38,7 +38,8 @@ class ScheduleStampTemplate(WallTemplate):
         h = ctx.device_profile.get("height", 600)
         img = Image.new("RGB", (w, h), color=(240, 248, 255))
         draw = ImageDraw.Draw(img)
-        size_px = 56
+        scale = min(w, h) / 600
+        size_px = max(36, int(56 * scale))
         font = _load_cjk_font(size_px)
         fill = (20, 40, 80)
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -47,7 +48,9 @@ class ScheduleStampTemplate(WallTemplate):
         y = max(40, (h - th) // 2)
         draw.text((x, y), text, fill=fill, font=font)
         hint = "schedule_stamp · MYPI_TZ"
-        small = _load_cjk_font(18)
+        small_size = max(14, int(18 * scale))
+        small = _load_cjk_font(small_size)
         hb = draw.textbbox((0, 0), hint, font=small)
-        draw.text((24, h - 48 - (hb[3] - hb[1])), hint, fill=(100, 120, 140), font=small)
+        margin = max(24, int(w * 0.04))
+        draw.text((margin, h - 48 - (hb[3] - hb[1])), hint, fill=(100, 120, 140), font=small)
         return img

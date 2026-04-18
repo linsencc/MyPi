@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$")
 
 
 class IntervalSchedule(BaseModel):
@@ -21,6 +24,13 @@ class CronWeeklySchedule(BaseModel):
         default_factory=lambda: list(range(7)),
         description="0=Sunday (same as JS)",
     )
+
+    @field_validator("time")
+    @classmethod
+    def _validate_time(cls, v: str) -> str:
+        if not _TIME_RE.match(v):
+            raise ValueError(f"time must be HH:MM or HH:MM:SS (got {v!r})")
+        return v
 
 
 Schedule = Annotated[

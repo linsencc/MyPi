@@ -29,21 +29,13 @@ export function SystemLogsDialog({
       .then(setLogs)
       .catch(console.error)
 
-    const sse = new EventSource("/api/v1/wall/events")
-    sse.addEventListener("system_log", (e) => {
-      try {
-        const newLog = JSON.parse(e.data) as SystemLog
-        setLogs((prev) => {
-          const next = [...prev, newLog]
-          if (next.length > 200) next.shift() // keep latest 200
-          return next
-        })
-      } catch (err) {
-        console.error("Failed to parse system_log", err)
-      }
-    })
+    const id = setInterval(() => {
+      getSystemLogs()
+        .then(setLogs)
+        .catch(console.error)
+    }, 5000)
 
-    return () => sse.close()
+    return () => clearInterval(id)
   }, [open])
 
   useEffect(() => {

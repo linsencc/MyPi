@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   ApiError,
@@ -41,6 +41,7 @@ export function useWallSession() {
   const [toast, setToast] = useState<string | null>(null)
 
   const { busyId: rowBusyId, withCooldown } = useRowCooldown(ROW_COOLDOWN_MS)
+  const refreshSeqRef = useRef(0)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -53,6 +54,7 @@ export function useWallSession() {
   }, [toast])
 
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeqRef.current
     setLoadError(null)
     try {
       const [cfg, tpl, ws, runs] = await Promise.all([
@@ -61,11 +63,13 @@ export function useWallSession() {
         getWallState(),
         getWallRuns(),
       ])
+      if (seq !== refreshSeqRef.current) return
       setConfig(cfg)
       setTemplates(tpl)
       setWallState(ws)
       setWallRuns(runs)
     } catch (e) {
+      if (seq !== refreshSeqRef.current) return
       const msg = e instanceof ApiError ? e.message : "加载失败，请确认后端已启动（端口 5050）"
       setLoadError(msg)
       showToast(msg)
@@ -103,26 +107,8 @@ export function useWallSession() {
   }, [])
 
   useEffect(() => {
-    const sse = new EventSource('/api/v1/wall/events')
-    
-    sse.addEventListener('wall_update', (e) => {
-      console.log('Received wall_update event', e.data)
-      try {
-        const nextState = JSON.parse(e.data) as WallState
-        setWallState(nextState)
-      } catch (err) {
-        console.error('Failed to parse wall_update payload', err)
-      }
-      void refresh()
-    })
-
-    sse.onerror = (e) => {
-      console.error('SSE Error', e)
-    }
-
-    return () => {
-      sse.close()
-    }
+    const id = setInterval(() => void refresh(), 8000)
+    return () => clearInterval(id)
   }, [refresh])
 
   const scenes = config?.scenes ?? []

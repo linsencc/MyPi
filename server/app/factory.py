@@ -3,15 +3,18 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+from pathlib import Path
 
-from flask import Flask
+from flask import Flask, send_from_directory
 
 from api.v1_routes import bp as api_v1_bp
-from display.sink import DisplaySink
+from display.sink import create_display_sink
 from orchestrator.service import WallOrchestrator
 from pipeline.wall_show import WallPipeline
 from renderers.registry import discover_templates
 from storage.stores import set_config_registry
+
+_WEB_DIST = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
 
 
 def _is_werkzeug_reloader_parent() -> bool:
@@ -24,25 +27,29 @@ def create_app() -> Flask:
     
     fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
-    # Basic config for console
     logging.basicConfig(level=logging.INFO, format=fmt, datefmt=datefmt)
     
-    # Configure and add memory handler if not already added
     if memory_handler not in logging.getLogger().handlers:
         formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
         memory_handler.setFormatter(formatter)
         memory_handler.setLevel(logging.INFO)
         logging.getLogger().addHandler(memory_handler)
 
-    app = Flask(__name__)
+    static_dir = str(_WEB_DIST) if _WEB_DIST.is_dir() else None
+    app = Flask(__name__, static_folder=static_dir, static_url_path="")
 
     registry = discover_templates()
     set_config_registry(registry)
-    pipeline = WallPipeline(registry, DisplaySink())
+
+    from renderers.templates.daily_motto import preflight_font
+    try:
+        preflight_font()
+    except RuntimeError:
+        logging.getLogger(__name__).warning("CJK font not found at startup; daily_motto may fail")
+
+    sink = create_display_sink()
+    pipeline = WallPipeline(registry, sink)
     orch = WallOrchestrator(pipeline, registry)
-    
-    # Hook memory handler to orchestrator's SSE
-    memory_handler.on_log = lambda entry: orch._broadcast_event("system_log", entry)
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -58,6 +65,15 @@ def create_app() -> Flask:
     app.extensions["scheduler"] = scheduler
 
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1")
+
+    if static_dir:
+        @app.route("/", defaults={"path": ""})
+        @app.route("/<path:path>")
+        def _spa_fallback(path: str):
+            full = Path(static_dir) / path
+            if full.is_file():
+                return send_from_directory(static_dir, path)
+            return send_from_directory(static_dir, "index.html")
 
     if not _is_werkzeug_reloader_parent():
         with app.app_context():

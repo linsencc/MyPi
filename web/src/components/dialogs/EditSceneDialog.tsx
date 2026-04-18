@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { editDialogFieldClass, editDialogLabelClass } from "@/app/edit-dialog-styles"
 import { IntervalUnitSelect } from "@/components/IntervalUnitSelect"
@@ -49,7 +49,7 @@ export function EditSceneDialog({
   scene: Scene | null
   templates: TemplateMeta[]
   onOpenChange: (open: boolean) => void
-  onSave: (next: Scene) => void
+  onSave: (next: Scene) => void | Promise<void>
   onDelete?: (id: string) => void
   onError: (msg: string) => void
 }) {
@@ -57,6 +57,7 @@ export function EditSceneDialog({
   const editDialogScrollRef = useRef<HTMLDivElement>(null)
 
   const [name, setName] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const [formRefreshMode, setFormRefreshMode] = useState<RefreshMode>("interval")
   const [formIntervalValue, setFormIntervalValue] = useState(5)
@@ -111,7 +112,7 @@ export function EditSceneDialog({
     })
   }
 
-  const buildSceneFromForm = (base: Scene): Scene | null => {
+  const buildSceneFromForm = useCallback((base: Scene): Scene | null => {
     const form: SceneScheduleFormState = {
       refreshMode: formRefreshMode,
       intervalValue: formIntervalValue,
@@ -141,15 +142,20 @@ export function EditSceneDialog({
     }
     next = applyScheduleFormToScene(next, form)
     return next
-  }
+  }, [name, formRefreshMode, formIntervalValue, formIntervalUnit, formScheduledClock, formWeekdays, onError])
 
-  const handleSave = () => {
-    if (!scene) return
+  const handleSave = useCallback(async () => {
+    if (!scene || saving) return
     const next = buildSceneFromForm(scene)
     if (!next) return
-    onSave(next)
-    onOpenChange(false)
-  }
+    setSaving(true)
+    try {
+      await onSave(next)
+      onOpenChange(false)
+    } finally {
+      setSaving(false)
+    }
+  }, [scene, saving, buildSceneFromForm, onSave, onOpenChange])
 
   const handleDelete = () => {
     if (!scene || !onDelete) return
@@ -373,10 +379,11 @@ export function EditSceneDialog({
               </Button>
               <Button
                 type="button"
-                className="h-10 rounded-lg bg-[#0071e3] px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                disabled={saving}
+                className="h-10 rounded-lg bg-[#0071e3] px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/35 disabled:opacity-60"
                 onClick={handleSave}
               >
-                保存
+                {saving ? "保存中…" : "保存"}
               </Button>
             </div>
           </div>

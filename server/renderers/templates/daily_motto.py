@@ -128,34 +128,53 @@ def _font_renders_cjk(font: ImageFont.ImageFont, size: int) -> bool:
         return False
 
 
-def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
+_cached_font_path: Path | None = None
+
+
+def _resolve_cjk_font_path(allow_download: bool = False) -> Path:
+    """Find (and optionally download) a CJK font, returning its *Path*.
+
+    This is intentionally separated from opening-at-a-given-size so that the
+    expensive path resolution + optional download only runs once at startup.
+    """
+    global _cached_font_path
+    if _cached_font_path is not None:
+        return _cached_font_path
+
+    probe_size = 20
+
     custom = os.environ.get("MYPI_CJK_FONT", "").strip()
     if custom:
         p = Path(custom)
         if p.is_file():
-            font = _open_font(p, size)
-            if _font_renders_cjk(font, size):
-                return font
+            font = _open_font(p, probe_size)
+            if _font_renders_cjk(font, probe_size):
+                _cached_font_path = p
+                return p
         log.warning("daily_motto: MYPI_CJK_FONT not usable: %s", custom)
 
     if _BUNDLED_OTF.is_file() and _BUNDLED_OTF.stat().st_size > 500_000:
-        font = _open_font(_BUNDLED_OTF, size)
-        if _font_renders_cjk(font, size):
-            return font
+        font = _open_font(_BUNDLED_OTF, probe_size)
+        if _font_renders_cjk(font, probe_size):
+            _cached_font_path = _BUNDLED_OTF
+            return _BUNDLED_OTF
 
-    fetched = _try_download_noto_subset()
-    if fetched and fetched.is_file():
-        font = _open_font(fetched, size)
-        if _font_renders_cjk(font, size):
-            return font
+    if allow_download:
+        fetched = _try_download_noto_subset()
+        if fetched and fetched.is_file():
+            font = _open_font(fetched, probe_size)
+            if _font_renders_cjk(font, probe_size):
+                _cached_font_path = fetched
+                return fetched
 
     for pat in ("Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Zen Hei", "Source Han Sans SC"):
         fc = _font_from_fontconfig(pat)
         if fc:
             try:
-                font = _open_font(fc, size)
-                if _font_renders_cjk(font, size):
-                    return font
+                font = _open_font(fc, probe_size)
+                if _font_renders_cjk(font, probe_size):
+                    _cached_font_path = fc
+                    return fc
             except OSError:
                 continue
 
@@ -164,9 +183,10 @@ def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
             pp = Path(p)
             if not pp.is_file():
                 continue
-            font = _open_font(pp, size)
-            if _font_renders_cjk(font, size):
-                return font
+            font = _open_font(pp, probe_size)
+            if _font_renders_cjk(font, probe_size):
+                _cached_font_path = pp
+                return pp
         except OSError:
             continue
 
@@ -175,6 +195,17 @@ def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
         "Install fonts (e.g. apt install fonts-noto-cjk), place NotoSansSC-Regular.otf under "
         "renderers/templates/fonts/, or set MYPI_CJK_FONT to a .ttf/.otf path."
     )
+
+
+def preflight_font() -> None:
+    """Call at startup to eagerly resolve (and optionally download) the font."""
+    _resolve_cjk_font_path(allow_download=True)
+    log.info("daily_motto: font resolved → %s", _cached_font_path)
+
+
+def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
+    p = _resolve_cjk_font_path(allow_download=False)
+    return _open_font(p, size)
 
 
 def _wrap_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
@@ -198,16 +229,19 @@ class DailyMottoTemplate(WallTemplate):
         h = ctx.device_profile.get("height", 600)
         img = Image.new("RGB", (w, h), color=(248, 246, 240))
         draw = ImageDraw.Draw(img)
-        size_px = 34
+        scale = min(w, h) / 600
+        size_px = max(24, int(34 * scale))
         font = _load_cjk_font(size_px)
-        lines = _wrap_lines(text, max_chars=11, max_lines=6)
+        max_chars = max(6, int(w / (size_px * 1.1)))
+        lines = _wrap_lines(text, max_chars=max_chars, max_lines=8)
         line_h = int(size_px * 1.38)
         fill = (35, 38, 42)
         block_h = len(lines) * line_h
         y0 = max(40, (h - block_h) // 2)
+        margin = max(24, int(w * 0.04))
         for k, line in enumerate(lines):
             bbox = draw.textbbox((0, 0), line, font=font)
             tw = bbox[2] - bbox[0]
-            x = max(24, (w - tw) // 2)
+            x = max(margin, (w - tw) // 2)
             draw.text((x, y0 + k * line_h), line[:220], fill=fill, font=font)
         return img
