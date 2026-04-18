@@ -50,6 +50,8 @@ export interface WallState {
   currentTemplateId: string | null
   currentPreviewUrl: string | null
   upcoming: UpcomingItem[]
+  displayActiveSceneId?: string | null
+  queuedDisplaySceneIds?: string[]
 }
 
 export interface SystemLog {

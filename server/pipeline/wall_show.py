@@ -60,12 +60,24 @@ class WallPipeline:
             
             # Pipeline takes over saving the image
             out_path = out_dir / f"{scene.id}_{run_id}.png"
+            t_save = time.perf_counter()
             img.save(out_path, format="PNG")
             image_path_str = str(out_path.resolve())
-            
+            save_ms = int((time.perf_counter() - t_save) * 1000)
+
+            t_show = time.perf_counter()
             self._sink.show(image_path_str)
+            show_ms = int((time.perf_counter() - t_show) * 1000)
+
             ms = int((time.perf_counter() - t0) * 1000)
-            log.info(f"Pipeline: Rendered scene_id={scene.id} successfully in {ms}ms (output={image_path_str})")
+            log.info(
+                "Pipeline: scene_id=%s ok save_ms=%s show_ms=%s total_ms=%s output=%s",
+                scene.id,
+                save_ms,
+                show_ms,
+                ms,
+                image_path_str,
+            )
             run = WallRun(
                 id=run_id,
                 scene_id=scene.id,

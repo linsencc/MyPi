@@ -2,7 +2,26 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import time
+
+
+def _wait_wall_preview(c, j, timeout_s: float = 45.0, url_contains: str | None = None):
+    """show-now returns before the async drain finishes; poll wall/state for output URL."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        r = c.get("/api/v1/wall/state")
+        ws = j(r)
+        p = (ws or {}).get("currentPreviewUrl")
+        if not p or not str(p).startswith("/api/v1/output/"):
+            time.sleep(0.05)
+            continue
+        if url_contains is not None and url_contains not in str(p):
+            time.sleep(0.05)
+            continue
+        return ws
+    return None
 
 
 def main() -> int:
@@ -66,10 +85,10 @@ def main() -> int:
             fails += 1
         else:
             print("OK show-now")
-            wsb = sn.get("wallState") or {}
-            p0 = wsb.get("currentPreviewUrl")
+            wsb = _wait_wall_preview(c, j)
+            p0 = (wsb or {}).get("currentPreviewUrl")
             if not p0 or not str(p0).startswith("/api/v1/output/"):
-                print("FAIL show-now wallState.currentPreviewUrl", p0)
+                print("FAIL show-now wallState.currentPreviewUrl after wait", p0)
                 fails += 1
             else:
                 print("OK show-now embeds preview URL")
@@ -85,9 +104,10 @@ def main() -> int:
                 print("FAIL schedule_stamp show-now", r.status_code, r.data[:300])
                 fails += 1
             else:
-                p2 = (sn2.get("wallState") or {}).get("currentPreviewUrl")
+                ws2 = _wait_wall_preview(c, j, url_contains="schedule_stamp")
+                p2 = (ws2 or {}).get("currentPreviewUrl")
                 if not p2 or "schedule_stamp" not in str(p2):
-                    print("FAIL schedule_stamp preview path", p2)
+                    print("FAIL schedule_stamp preview path after wait", p2)
                     fails += 1
                 else:
                     r = c.get(p2)
@@ -142,6 +162,36 @@ def main() -> int:
         if r.status_code != 200:
             print("FAIL put config re-enable")
             fails += 1
+
+        delay_ms = os.environ.get("MYPI_EINK_SHOW_DELAY_MS", "").strip()
+        if delay_ms and stamp_sid and stamp_sid != sid:
+            print("--- queue smoke (MYPI_EINK_SHOW_DELAY_MS=%s)" % delay_ms)
+            r = c.post(f"/api/v1/scenes/{sid}/show-now")
+            snq1 = j(r)
+            if not snq1 or not snq1.get("ok"):
+                print("FAIL queue smoke first show-now")
+                fails += 1
+            else:
+                r2 = c.post(f"/api/v1/scenes/{stamp_sid}/show-now")
+                snq = j(r2)
+                if not snq or not snq.get("ok"):
+                    print("FAIL queue smoke second show-now", r2.status_code)
+                    fails += 1
+                else:
+                    wsq = snq.get("wallState") or {}
+                    q = wsq.get("queuedDisplaySceneIds") or []
+                    active = wsq.get("displayActiveSceneId")
+                    if stamp_sid in q or active == sid:
+                        print("OK queue smoke (active=%r queued=%r)" % (active, q))
+                    else:
+                        print(
+                            "FAIL queue smoke expected stamp in queue or sid active",
+                            "active=",
+                            active,
+                            "queued=",
+                            q,
+                        )
+                        fails += 1
 
     print("---")
     if fails:

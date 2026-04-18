@@ -82,3 +82,7 @@ class WallState(BaseModel):
     current_template_id: str | None = Field(None, alias="currentTemplateId")
     current_preview_url: str | None = Field(None, alias="currentPreviewUrl")
     upcoming: list[UpcomingItem] = Field(default_factory=list)
+    display_active_scene_id: str | None = Field(None, alias="displayActiveSceneId")
+    queued_display_scene_ids: list[str] = Field(
+        default_factory=list, alias="queuedDisplaySceneIds"
+    )

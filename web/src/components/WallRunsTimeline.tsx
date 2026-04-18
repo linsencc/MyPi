@@ -60,19 +60,27 @@ type Row = {
   sceneName: string
   endMs: number
   ok: boolean
+  /** Waiting behind a slow in-progress display refresh (e-ink queue). */
+  queuedBehindDisplay?: boolean
 }
 
 type DotKind = "past" | "playing" | "upcoming"
 
 const TIMELINE_DOT_RING_PAGE = "ring-2 ring-slate-100"
 
-function dotClass(kind: DotKind, ok: boolean): string {
+function dotClass(kind: DotKind, ok: boolean, queuedBehindDisplay: boolean): string {
   const ringPage = TIMELINE_DOT_RING_PAGE
   if (kind === "playing") {
     /* ring 在外层包裹上，避免与 animate-timeline-pulse 的 box-shadow 关键帧互斥 */
     return "block h-3 w-3 rounded-full bg-[var(--color-primary)] animate-timeline-pulse"
   }
   if (kind === "upcoming") {
+    if (queuedBehindDisplay) {
+      return cn(
+        "h-2 w-2 rounded-full border-[1.5px] border-red-500 bg-red-50",
+        ringPage
+      )
+    }
     return cn(
       "h-2 w-2 rounded-full border-[1.5px] border-sky-500 bg-sky-50",
       ringPage,
@@ -137,13 +145,10 @@ const TimelineRowItem = memo(
     totalRows: number
     nowMs: number
     kind: DotKind
-  }>(function TimelineRowItem({
-    row,
-    index,
-    totalRows,
-    nowMs,
-    kind,
-  }, ref) {
+  }>(function TimelineRowItem(
+    { row, index, totalRows, nowMs, kind },
+    ref,
+  ) {
     const iso = new Date(row.endMs).toISOString()
     const datePart = formatDatePart(row.endMs, nowMs)
     const relHint = formatRelativeHint(row.endMs, nowMs)
@@ -227,10 +232,18 @@ const TimelineRowItem = memo(
               )}
               aria-hidden
             >
-              <span className={dotClass(kind, row.ok)} />
+              <span
+                className={dotClass(kind, row.ok, row.queuedBehindDisplay ?? false)}
+              />
             </span>
           ) : (
-            <span className={cn("relative z-[1]", dotClass(kind, row.ok))} aria-hidden />
+            <span
+              className={cn(
+                "relative z-[1]",
+                dotClass(kind, row.ok, row.queuedBehindDisplay ?? false),
+              )}
+              aria-hidden
+            />
           )}
         </div>
         <span
@@ -255,28 +268,40 @@ export function WallRunsTimeline({
   upcoming,
   sceneNames,
   currentOnWall,
+  queuedDisplaySceneIds = [],
   maxEvents = 30,
 }: {
   runs: WallRun[]
   upcoming: UpcomingItem[]
   sceneNames: Record<string, string>
   currentOnWall: { id: string; name: string } | null
+  /** Scene IDs waiting behind an in-progress wall refresh. */
+  queuedDisplaySceneIds?: string[]
   maxEvents?: number
 }) {
+  const queueSet = useMemo(
+    () => new Set(queuedDisplaySceneIds),
+    [queuedDisplaySceneIds],
+  )
+
   const rows = useMemo(() => {
     const list: Row[] = []
-    
+    const queueAnchorMs = Date.now()
+
     // Add upcoming items
     const limitedUpcoming = upcoming.slice(0, 10)
+    const upcomingSceneIds = new Set<string>()
     for (const u of limitedUpcoming) {
       const endMs = Date.parse(u.at)
       if (Number.isNaN(endMs)) continue
+      upcomingSceneIds.add(u.sceneId)
       list.push({
         key: `upcoming-${u.sceneId}-${u.at}`,
         sceneId: u.sceneId,
         sceneName: u.name || sceneNames[u.sceneId] || u.sceneId,
         endMs,
         ok: true, // Upcoming is assumed ok
+        queuedBehindDisplay: queueSet.has(u.sceneId),
       })
     }
 
@@ -293,23 +318,46 @@ export function WallRunsTimeline({
       })
     }
 
+    // Show-now queue entries that are not in the upcoming slice
+    const maxQueueExtras = 10
+    let queueExtras = 0
+    for (const qid of queuedDisplaySceneIds) {
+      if (upcomingSceneIds.has(qid)) continue
+      if (queueExtras >= maxQueueExtras) break
+      list.push({
+        key: `queue-${qid}`,
+        sceneId: qid,
+        sceneName: sceneNames[qid] ?? qid,
+        endMs: queueAnchorMs,
+        ok: true,
+        queuedBehindDisplay: true,
+      })
+      queueExtras += 1
+    }
+
     list.sort((a, b) => b.endMs - a.endMs)
     return list.slice(0, maxEvents)
-  }, [runs, upcoming, sceneNames, maxEvents])
+  }, [runs, upcoming, sceneNames, maxEvents, queuedDisplaySceneIds, queueSet])
 
   const nowMs = useMemo(() => Date.now(), [rows])
 
   const playingAnchor = useMemo(() => {
     if (!currentOnWall) return null as { endMs: number; key: string } | null
     // Need to find the latest historical run for the current scene, not upcoming items
-    const historyRuns = rows.filter((r) => r.sceneId === currentOnWall.id && !r.key.startsWith('upcoming-'))
+    const historyRuns = rows.filter(
+      (r) =>
+        r.sceneId === currentOnWall.id &&
+        !r.key.startsWith("upcoming-") &&
+        !r.key.startsWith("queue-"),
+    )
     if (historyRuns.length === 0) return null
     const hit = historyRuns.find((r) => r.ok) ?? historyRuns[0]
     return { endMs: hit.endMs, key: hit.key }
   }, [rows, currentOnWall])
 
   function dotKindForRow(row: Row): DotKind {
-    if (row.key.startsWith('upcoming-')) return "upcoming"
+    if (row.key.startsWith("upcoming-") || row.key.startsWith("queue-"))
+      return "upcoming"
     if (!playingAnchor) return "past"
     if (row.key === playingAnchor.key) return "playing"
     if (row.endMs > playingAnchor.endMs) return "upcoming"

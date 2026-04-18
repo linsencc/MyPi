@@ -170,6 +170,8 @@ def show_now(scene_id: str):
     scene = next((s for s in cfg.scenes if s.id == scene_id), None)
     if scene is None:
         return jsonify({"error": "not found"}), 404
+    if not scene.enabled:
+        return jsonify({"error": "scene disabled"}), 400
     orch = _orch()
     log.info(f"API: Show-now requested for scene_id={scene_id}")
     orch.enqueue_show_now(scene_id)

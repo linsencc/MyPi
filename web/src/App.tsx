@@ -143,6 +143,7 @@ export default function App() {
             upcoming={wallState?.upcoming ?? []}
             sceneNames={sceneNames}
             currentOnWall={currentOnWallHeader}
+            queuedDisplaySceneIds={wallState?.queuedDisplaySceneIds ?? []}
             maxEvents={frameConfig.timelineMaxEvents ?? 30}
           />
 

@@ -37,7 +37,7 @@ def _resolve_tz(name: str) -> ZoneInfo:
 
 
 class WallOrchestrator:
-    """Serializes wakeup / show-now so APScheduler and Flask never race on deques."""
+    """Serializes queue mutations; drain runs on a worker so HTTP returns while show() blocks."""
 
     def __init__(self, pipeline: WallPipeline, registry: TemplateRegistry) -> None:
         self._pipeline = pipeline
@@ -48,11 +48,15 @@ class WallOrchestrator:
         self._scheduled: deque[str] = deque()
         self._ephemeral_scenes: dict[str, Scene] = {}
         self._display_lock = threading.Lock()
-        self._wakeup_lock = threading.Lock()
+        self._q_lock = threading.Lock()
+        self._q_ready = threading.Condition(self._q_lock)
+        self._active_lock = threading.Lock()
+        self._display_active_scene_id: str | None = None
         self._scheduler: BackgroundScheduler | None = None
         self._wall_state = WallState()
         self._sse_clients: list[queue.Queue] = []
         self._sse_lock = threading.Lock()
+        self._worker_thread: threading.Thread | None = None
 
     @property
     def wall_state(self) -> WallState:
@@ -84,29 +88,60 @@ class WallOrchestrator:
             for q in dead:
                 self._sse_clients.remove(q)
 
+    def _ensure_drain_worker(self) -> None:
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            return
+
+        def loop() -> None:
+            self._drain_worker_loop()
+
+        self._worker_thread = threading.Thread(
+            target=loop, daemon=True, name="mypi-wall-drain"
+        )
+        self._worker_thread.start()
+
+    def _sync_display_fields_and_broadcast(self) -> None:
+        """Lock order: _active_lock, then _q_lock (same order everywhere)."""
+        with self._active_lock:
+            active = self._display_active_scene_id
+        with self._q_lock:
+            queued = list(self._immediate) + list(self._scheduled)
+        ws = self._wall_state
+        self._wall_state = WallState(
+            current_scene_id=ws.current_scene_id,
+            current_scene_name=ws.current_scene_name,
+            current_template_id=ws.current_template_id,
+            current_preview_url=ws.current_preview_url,
+            upcoming=ws.upcoming,
+            display_active_scene_id=active,
+            queued_display_scene_ids=queued,
+        )
+        self._broadcast_event(
+            "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
+        )
+
     def enqueue_show_now(self, scene_id: str) -> None:
-        with self._wakeup_lock:
+        with self._q_lock:
             log.info(f"Orchestrator: Enqueued show-now for scene_id={scene_id}")
             self._immediate.append(scene_id)
-            self._run_wakeup_cycle()
+            self._ensure_drain_worker()
+            self._q_ready.notify()
+        self._sync_display_fields_and_broadcast()
 
     def enqueue_ephemeral_scene(self, scene: Scene) -> None:
-        with self._wakeup_lock:
+        with self._q_lock:
             log.info(f"Orchestrator: Enqueued ephemeral show-now for scene_id={scene.id}")
             self._ephemeral_scenes[scene.id] = scene
             self._immediate.append(scene.id)
-            self._run_wakeup_cycle()
+            self._ensure_drain_worker()
+            self._q_ready.notify()
+        self._sync_display_fields_and_broadcast()
 
     def wakeup(self) -> None:
-        with self._wakeup_lock:
-            self._run_wakeup_cycle()
-
-    def _run_wakeup_cycle(self) -> None:
         cfg = load_config()
         st = load_schedule_state()
         last_map = dict(st.get("lastShownAtBySceneId", {}))
         now = datetime.now(UTC)
-        # Add a 1-second buffer in case the scheduler fires slightly early
         now_buffered = now + timedelta(seconds=1)
         due_scenes: list = []
         for sc in cfg.scenes:
@@ -118,54 +153,89 @@ class WallOrchestrator:
             if nxt is not None and nxt <= now_buffered:
                 due_scenes.append(sc)
         due_scenes.sort(key=lambda s: (s.tie_break_priority, s.id))
-        for sc in due_scenes:
-            log.info(f"Orchestrator: Scheduled scene_id={sc.id} for execution")
-            self._scheduled.append(sc.id)
-        
-        had_items = bool(self._immediate) or bool(self._scheduled)
-        has_new_frame = self._drain_queues(cfg)
-        
+
+        with self._q_lock:
+            for sc in due_scenes:
+                log.info(f"Orchestrator: Scheduled scene_id={sc.id} for execution")
+                self._scheduled.append(sc.id)
+            had_due = bool(due_scenes)
+            self._ensure_drain_worker()
+            if had_due:
+                self._q_ready.notify()
+
+        self._reschedule_alarm()
+
         st2 = load_schedule_state()
         last_map2 = st2.get("lastShownAtBySceneId", {})
         now_after = datetime.now(UTC)
         self._refresh_wall_state(cfg, last_map2, now_after)
-        self._reschedule_alarm()
-        
-        if had_items or has_new_frame:
-            self._broadcast_event("wall_update", self._wall_state.model_dump(mode="json", by_alias=True))
 
-    def _drain_queues(self, cfg: AppConfig) -> bool:
-        has_new_frame = False
-        def one(sid: str, force: bool = False) -> None:
-            nonlocal has_new_frame
-            log.info(f"Orchestrator: Preparing to run scene_id={sid} (force={force})")
+        if had_due:
+            self._broadcast_event(
+                "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
+            )
+
+    def _drain_worker_loop(self) -> None:
+        while True:
+            with self._q_lock:
+                while not self._immediate and not self._scheduled:
+                    self._q_ready.wait()
+                if self._immediate:
+                    sid = self._immediate.popleft()
+                    force = True
+                else:
+                    sid = self._scheduled.popleft()
+                    force = False
+
+            cfg = load_config()
+            try:
+                self._run_one_scene(sid, cfg, force)
+            except Exception:
+                log.exception("Orchestrator: drain worker failed for scene_id=%s", sid)
+
+            st2 = load_schedule_state()
+            last_map2 = st2.get("lastShownAtBySceneId", {})
+            now_after = datetime.now(UTC)
+            self._refresh_wall_state(cfg, last_map2, now_after)
+            self._reschedule_alarm()
+            self._broadcast_event(
+                "wall_update", self._wall_state.model_dump(mode="json", by_alias=True)
+            )
+
+    def _run_one_scene(self, sid: str, cfg: AppConfig, force: bool) -> None:
+        log.info(f"Orchestrator: Preparing to run scene_id={sid} (force={force})")
+        with self._q_lock:
             sc = self._ephemeral_scenes.pop(sid, None)
-            if sc is None:
-                sc = next((x for x in cfg.scenes if x.id == sid), None)
-            if sc is None:
-                return
-            if not sc.enabled and not force:
-                return
-            with self._display_lock:
-                run = self._pipeline.run_scene(sc, cfg.frame_tuning, cfg.device_profile)
-            if run.ok and run.output_path:
-                bn = Path(run.output_path).name
-                preview = f"/api/v1/output/{run.id}/{bn}"
-                self._wall_state = WallState(
-                    current_scene_id=sc.id,
-                    current_scene_name=sc.name or sc.template_id,
-                    current_template_id=sc.template_id,
-                    current_preview_url=preview,
-                    upcoming=self._wall_state.upcoming,
-                )
-                has_new_frame = True
+        if sc is None:
+            sc = next((x for x in cfg.scenes if x.id == sid), None)
+        if sc is None:
+            return
+        if not sc.enabled and not force:
+            return
 
-        while self._immediate:
-            one(self._immediate.popleft(), force=True)
-        while self._scheduled:
-            one(self._scheduled.popleft(), force=False)
-            
-        return has_new_frame
+        with self._active_lock:
+            self._display_active_scene_id = sid
+        self._sync_display_fields_and_broadcast()
+
+        with self._display_lock:
+            run = self._pipeline.run_scene(sc, cfg.frame_tuning, cfg.device_profile)
+
+        with self._active_lock:
+            self._display_active_scene_id = None
+
+        if run.ok and run.output_path:
+            bn = Path(run.output_path).name
+            preview = f"/api/v1/output/{run.id}/{bn}"
+            ws = self._wall_state
+            self._wall_state = WallState(
+                current_scene_id=sc.id,
+                current_scene_name=sc.name or sc.template_id,
+                current_template_id=sc.template_id,
+                current_preview_url=preview,
+                upcoming=ws.upcoming,
+                display_active_scene_id=None,
+                queued_display_scene_ids=ws.queued_display_scene_ids,
+            )
 
     def _refresh_wall_state(self, cfg: AppConfig, last_map: dict, now: datetime) -> None:
         upcoming: list[UpcomingItem] = []
@@ -175,7 +245,7 @@ class WallOrchestrator:
             raw = last_map.get(sc.id)
             last = _parse_iso(raw) if raw else None
             nxts = future_fire_times(sc, last, now, self._tz, limit=10, max_hours=24)
-            
+
             plug = self._registry.get(sc.template_id)
             label = (sc.name or "").strip() or (
                 plug.display_name if plug else sc.template_id
@@ -184,14 +254,20 @@ class WallOrchestrator:
                 upcoming.append(
                     UpcomingItem(scene_id=sc.id, at=nxt.isoformat().replace("+00:00", "Z"), name=label)
                 )
-                
+
         upcoming.sort(key=lambda u: u.at)
+        with self._active_lock:
+            active = self._display_active_scene_id
+        with self._q_lock:
+            queued = list(self._immediate) + list(self._scheduled)
         self._wall_state = WallState(
             current_scene_id=self._wall_state.current_scene_id,
             current_scene_name=self._wall_state.current_scene_name,
             current_template_id=self._wall_state.current_template_id,
             current_preview_url=self._wall_state.current_preview_url,
             upcoming=upcoming[:50],
+            display_active_scene_id=active,
+            queued_display_scene_ids=queued,
         )
 
     def _reschedule_alarm(self) -> None:

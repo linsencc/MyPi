@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 from PIL import Image
@@ -46,9 +47,17 @@ def main() -> int:
     if r.status_code != 200 or not sn or not sn.get("ok"):
         print("FAIL TC-B01 show-now", r.status_code, sn)
         return 1
-    prev = (sn.get("wallState") or {}).get("currentPreviewUrl")
+    prev = None
+    deadline = time.time() + 45.0
+    while time.time() < deadline:
+        r2 = c.get("/api/v1/wall/state")
+        ws = r2.get_json()
+        prev = (ws or {}).get("currentPreviewUrl")
+        if prev and str(prev).startswith("/api/v1/output/"):
+            break
+        time.sleep(0.05)
     if not prev:
-        print("FAIL TC-B01 no preview url")
+        print("FAIL TC-B01 no preview url after wait")
         return 1
     r = c.get(prev)
     if r.status_code != 200:
