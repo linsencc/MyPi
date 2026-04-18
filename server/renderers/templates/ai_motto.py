@@ -12,7 +12,7 @@ Environment variables:
   MYPI_LLM_TIMEOUT     – LLM timeout seconds (default: 20)
   MYPI_LLM_PROXY       – HTTP(S) proxy for LLM calls
   CIVITAI_TOKEN         – Civitai API token for image generation
-  MYPI_CIVITAI_MODEL    – Civitai model URN (default: DreamShaper v8)
+  MYPI_CIVITAI_MODEL    – Civitai model URN (default: DreamShaper XL Lightning)
   MYPI_CIVITAI_TIMEOUT  – Civitai poll timeout seconds (default: 90)
 """
 from __future__ import annotations
@@ -45,22 +45,28 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
 
     {
       "motto": "一句中文寄语",
-      "image_prompt": "an English image description"
+      "image_prompt": "an English image description for SDXL"
     }
 
     严格要求：
     - 只输出上述 JSON，不加任何其他内容、标签或解释
     - motto: 质朴有深度的中文寄语，40 字以内，不说空话套话，不打招呼
-    - image_prompt: 一段 50 词以内的英文画面描述，与寄语意境吻合，
-      风格偏向自然风光、水彩、或东方美学，适合 Stable Diffusion 生图，
-      不要出现文字或人脸
+    - image_prompt: 一段描述性的英文画面 prompt，与寄语意境吻合，要求：
+      * 主体是自然风景（山川、湖泊、森林、花田、海岸、星空等）
+      * 明确指定一种画风，从以下任选：
+        impressionist oil painting / watercolor wash / Studio Ghibli anime style /
+        ink wash sumi-e / soft pastel illustration / cinematic photography
+      * 注重光影描写（golden hour, misty dawn, moonlit, dappled sunlight 等）
+      * 构图清晰，前景+中景+远景层次分明
+      * 绝对不要出现文字、人脸、画框
+      * 控制在 40-60 词
 """)
 
 _USER_PROMPT = "请给我今天的一句话和匹配的画面。"
 
 # ── Civitai config ──────────────────────────────────────────────────
 _CIVITAI_API = "https://orchestration.civitai.com"
-_DEFAULT_CIVITAI_MODEL = "urn:air:sd1:checkpoint:civitai:4384@128713"
+_DEFAULT_CIVITAI_MODEL = "urn:air:sdxl:checkpoint:civitai:112902@354657"
 _CIVITAI_POLL_INTERVAL = 4
 _CIVITAI_TIMEOUT = 90
 
@@ -170,15 +176,25 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
     model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
     poll_timeout = int(os.environ.get("MYPI_CIVITAI_TIMEOUT", str(_CIVITAI_TIMEOUT)))
 
+    is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
+    if is_sdxl:
+        full_prompt = f"{prompt}, masterpiece, best quality, highly detailed, no text, no watermark, no frame"
+        neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres, ugly, disfigured:1.4)"
+        steps, cfg = 6, 2
+    else:
+        full_prompt = f"{prompt}, masterpiece, best quality, no text, no watermark"
+        neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres:1.4)"
+        steps, cfg = 20, 7
+
     job_payload = json.dumps({
         "$type": "textToImage",
         "model": model_urn,
         "params": {
-            "prompt": f"{prompt}, masterpiece, best quality, no text, no watermark",
-            "negativePrompt": "(text, watermark, signature, deformed, blurry, lowres:1.4)",
+            "prompt": full_prompt,
+            "negativePrompt": neg_prompt,
             "scheduler": "EulerA",
-            "steps": 20,
-            "cfgScale": 7,
+            "steps": steps,
+            "cfgScale": cfg,
             "width": width,
             "height": height,
             "clipSkip": 2,
@@ -264,10 +280,12 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
 
 # ── Composition ─────────────────────────────────────────────────────
 
-_BG_COLOR = (248, 246, 240)
-_TEXT_COLOR = (35, 38, 42)
-_SUBTLE_COLOR = (160, 155, 148)
-_DIVIDER_COLOR = (220, 216, 210)
+_BG_COLOR = (250, 248, 243)
+_TEXT_COLOR = (30, 32, 36)
+_SECONDARY_COLOR = (110, 105, 98)
+_SUBTLE_COLOR = (150, 145, 138)
+_ACCENT_COLOR = (85, 80, 72)
+_DIVIDER_COLOR = (200, 196, 188)
 
 
 def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
@@ -286,6 +304,60 @@ def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
     return cropped.resize((target_w, target_h), Image.LANCZOS)
 
 
+def _overlay_gradient(canvas: Image.Image, y_start: int, fade_h: int,
+                      max_opacity: float = 0.96) -> None:
+    """Apply an ease-in gradient overlay of _BG_COLOR from y_start downward.
+
+    Uses a power curve (t^1.6) so the top of the gradient is nearly
+    invisible while the text zone reaches ~45-50% opacity — enough to
+    ensure readability on busy/dark backgrounds while still letting the
+    image breathe through.
+    """
+    w = canvas.width
+    bg_strip = Image.new("RGB", (w, fade_h), _BG_COLOR)
+    mask = Image.new("L", (w, fade_h))
+    draw_mask = ImageDraw.Draw(mask)
+    for y in range(fade_h):
+        t = y / fade_h
+        alpha = int(255 * max_opacity * (t ** 1.6))
+        draw_mask.line([(0, y), (w - 1, y)], fill=alpha)
+    canvas.paste(bg_strip, (0, y_start), mask=mask)
+
+
+def _cn_date_str() -> str:
+    """Today's date in Chinese, e.g. '四月十九日'."""
+    now = datetime.now()
+    ms = ["一", "二", "三", "四", "五", "六",
+          "七", "八", "九", "十", "十一", "十二"]
+    ds = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+    d = now.day
+    if d <= 10:
+        day = "十" if d == 10 else ds[d]
+    elif d < 20:
+        day = "十" + ds[d - 10]
+    elif d == 20:
+        day = "二十"
+    elif d < 30:
+        day = "二十" + ds[d - 20]
+    elif d == 30:
+        day = "三十"
+    else:
+        day = "三十一"
+    return f"{ms[now.month - 1]}月{day}日"
+
+
+def _draw_ornament(draw: ImageDraw.ImageDraw, cx: int, cy: int, scale: float) -> None:
+    """Draw a ── ◇ ── ornamental divider."""
+    half_w = int(26 * scale)
+    gap = int(5 * scale)
+    d = max(2, int(2.5 * scale))
+    draw.line([(cx - half_w - gap, cy), (cx - gap - 1, cy)], fill=_DIVIDER_COLOR, width=1)
+    draw.line([(cx + gap + 1, cy), (cx + half_w + gap, cy)], fill=_DIVIDER_COLOR, width=1)
+    draw.polygon([
+        (cx, cy - d), (cx + d, cy), (cx, cy + d), (cx - d, cy),
+    ], fill=_ACCENT_COLOR)
+
+
 def _compose(
     motto: str,
     art: Image.Image | None,
@@ -295,64 +367,100 @@ def _compose(
     img = Image.new("RGB", (canvas_w, canvas_h), color=_BG_COLOR)
     draw = ImageDraw.Draw(img)
     scale = min(canvas_w, canvas_h) / 600
-    margin = max(20, int(canvas_w * 0.04))
+    cx = canvas_w // 2
+    margin = max(32, int(canvas_w * 0.06))
 
     if art:
-        # Layout: image takes ~62% height, text takes the rest
-        img_area_h = int(canvas_h * 0.62)
-        text_area_h = canvas_h - img_area_h
-
-        # Fit and paste the art image
-        fitted = _fit_image(art, canvas_w, img_area_h)
+        # ── Full-bleed image + gradient overlay ──────────────
+        fitted = _fit_image(art, canvas_w, canvas_h)
         img.paste(fitted, (0, 0))
 
-        # Subtle gradient fade at the bottom edge of image into background
-        fade_h = min(40, img_area_h // 8)
-        for y in range(fade_h):
-            alpha = y / fade_h
-            blend = tuple(
-                int(px * (1 - alpha) + bg * alpha)
-                for px, bg in zip(fitted.getpixel((0, img_area_h - fade_h + y)), _BG_COLOR)
-            )
-            draw.line([(0, img_area_h - fade_h + y), (canvas_w, img_area_h - fade_h + y)], fill=blend)
+        grad_start = int(canvas_h * 0.45)
+        _overlay_gradient(img, grad_start, canvas_h - grad_start)
+        draw = ImageDraw.Draw(img)
 
-        text_y_start = img_area_h
+        # Text sits in the opaque zone (lower ~28%)
+        text_zone_center = int(canvas_h * 0.76)
+        size_px = max(24, int(34 * scale))
+        font = _load_cjk_font(size_px)
+        raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.05)))
+        n = len(motto)
+        if n <= raw_max:
+            max_chars = n
+        elif n <= raw_max * 2:
+            max_chars = (n + 1) // 2
+        else:
+            max_chars = raw_max
+        lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
+        line_h = int(size_px * 1.55)
+        block_h = len(lines) * line_h
+        y0 = text_zone_center - block_h // 2
+
+        shadow_off = max(1, int(1.5 * scale))
+        shadow_color = (180, 178, 174)
+        for k, ln in enumerate(lines):
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            tw = bbox[2] - bbox[0]
+            tx = (canvas_w - tw) // 2
+            ty = y0 + k * line_h
+            draw.text((tx + shadow_off, ty + shadow_off), ln,
+                      fill=shadow_color, font=font)
+            draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
+
+        # Footer: date + attribution
+        footer_y = canvas_h - int(28 * scale)
+        small = _load_cjk_font(max(11, int(13 * scale)))
+        date_str = _cn_date_str()
+        attr_str = "— AI 每日寄语"
+        spacer = int(20 * scale)
+        db = draw.textbbox((0, 0), date_str, font=small)
+        ab = draw.textbbox((0, 0), attr_str, font=small)
+        dw, aw = db[2] - db[0], ab[2] - ab[0]
+        total = dw + spacer + aw
+        x0 = (canvas_w - total) // 2
+        draw.text((x0, footer_y), date_str, fill=_SECONDARY_COLOR, font=small)
+        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_SUBTLE_COLOR, font=small)
+
     else:
-        # No image: text centered vertically
-        text_area_h = canvas_h
-        text_y_start = 0
-
-    # ── Draw text ──
-    size_px = max(22, int(32 * scale))
-    font = _load_cjk_font(size_px)
-    max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.05)))
-    lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
-    line_h = int(size_px * 1.5)
-    block_h = len(lines) * line_h
-
-    # Center text vertically in the text area, slightly above center
-    y0 = text_y_start + max(12, (text_area_h - block_h) // 2 - int(10 * scale))
-
-    for k, line in enumerate(lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        tw = bbox[2] - bbox[0]
-        x = max(margin, (canvas_w - tw) // 2)
-        draw.text((x, y0 + k * line_h), line, fill=_TEXT_COLOR, font=font)
-
-    # Attribution
-    try:
-        small_font = _load_cjk_font(max(11, int(14 * scale)))
-        label = "— AI 每日寄语"
-        lbbox = draw.textbbox((0, 0), label, font=small_font)
-        lw = lbbox[2] - lbbox[0]
-        draw.text(
-            (canvas_w - lw - margin, canvas_h - int(22 * scale)),
-            label,
-            fill=_SUBTLE_COLOR,
-            font=small_font,
+        # ── Text only (no image) ─────────────────────────────
+        bar_w = int(40 * scale)
+        bar_h = max(2, int(3 * scale))
+        bar_y = int(canvas_h * 0.32)
+        draw.rectangle(
+            [(cx - bar_w // 2, bar_y), (cx + bar_w // 2, bar_y + bar_h)],
+            fill=_ACCENT_COLOR,
         )
-    except Exception:
-        pass
+
+        size_px = max(30, int(42 * scale))
+        font = _load_cjk_font(size_px)
+        max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.05)))
+        lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
+        line_h = int(size_px * 1.6)
+        block_h = len(lines) * line_h
+        y0 = bar_y + bar_h + int(24 * scale)
+
+        for k, ln in enumerate(lines):
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            tw = bbox[2] - bbox[0]
+            draw.text(((canvas_w - tw) // 2, y0 + k * line_h), ln,
+                      fill=_TEXT_COLOR, font=font)
+
+        text_bottom = y0 + block_h
+        div_y = text_bottom + int(22 * scale)
+        _draw_ornament(draw, cx, div_y, scale)
+
+        footer_y = div_y + int(18 * scale)
+        small = _load_cjk_font(max(11, int(14 * scale)))
+        date_str = _cn_date_str()
+        attr_str = "— AI 每日寄语"
+        spacer = int(20 * scale)
+        db = draw.textbbox((0, 0), date_str, font=small)
+        ab = draw.textbbox((0, 0), attr_str, font=small)
+        dw, aw = db[2] - db[0], ab[2] - ab[0]
+        total = dw + spacer + aw
+        x0 = (canvas_w - total) // 2
+        draw.text((x0, footer_y), date_str, fill=_SECONDARY_COLOR, font=small)
+        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_SUBTLE_COLOR, font=small)
 
     return img
 
@@ -374,11 +482,15 @@ class AiMottoTemplate(WallTemplate):
         else:
             motto, image_prompt = _call_llm()
 
-        # Generate illustration
         art = None
         if image_prompt:
-            gen_w = min(512, w)
-            gen_h = min(384, int(h * 0.62))
+            model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
+            is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
+            base = 1024 if is_sdxl else 512
+            gen_w = min(base, w)
+            gen_w = max(256, (gen_w // 64) * 64)
+            gen_h = int(gen_w * (h / w))
+            gen_h = max(256, (gen_h // 64) * 64)
             art = _generate_civitai_image(image_prompt, gen_w, gen_h)
 
         return _compose(motto, art, w, h)
