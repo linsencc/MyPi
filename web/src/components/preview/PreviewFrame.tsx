@@ -25,12 +25,13 @@ export const PreviewFrame = memo(function PreviewFrame({
   const [displaySrc, setDisplaySrc] = useState(src)
   const [previousSrc, setPreviousSrc] = useState<string | null>(null)
 
+  /** 仅随 src / 预加载选项变化；勿把 displaySrc 放入依赖，否则会二次跑 effect、反复 setBroken(false) 与提前 return 打架 */
   useEffect(() => {
     setBroken(false)
-
-    if (src === displaySrc) return
     let isCancelled = false
     let retried = false
+    /** effect 创建时的上一帧画面，用于过渡底图 */
+    const previousDisplay = displaySrc
 
     const tryLoad = (url: string) => {
       const img = new Image()
@@ -39,7 +40,7 @@ export const PreviewFrame = memo(function PreviewFrame({
         if (isCancelled) return
 
         const update = () => {
-          setPreviousSrc(displaySrc)
+          setPreviousSrc(previousDisplay)
           setDisplaySrc(url)
         }
 
@@ -72,7 +73,8 @@ export const PreviewFrame = memo(function PreviewFrame({
     return () => {
       isCancelled = true
     }
-  }, [src, displaySrc, preloadRetry, useViewTransition])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意只在 src 变化时预加载；displaySrc 用闭包上一帧
+  }, [src, preloadRetry, useViewTransition])
 
   const useCssFilter =
     !lightweight && Boolean(imageFilter) && !isDataImagePlaceholder(displaySrc)

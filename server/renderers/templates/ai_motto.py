@@ -1,35 +1,45 @@
-"""AI-generated daily message template with Civitai illustration.
+"""AI-generated daily message template with a Pinterest-sourced illustration.
+
+Targets **full-color RGB** for color e-ink. Downloaded photos are rejected if they look **black &
+white**; if no color image is found after retries, the layout falls back to **text only** (no art).
 
 Each render:
-  1. Calls LLM to generate a Chinese motto + English image prompt
-  2. Calls Civitai to generate an illustration matching the mood
-  3. Composes a two-part layout: image on top, text below
+  1. Calls LLM to generate a Chinese motto + English image prompt (landscape / scenery, any style)
+  2. Fetches a full-color landscape image from Pinterest (or fallbacks; see below)
+  3. Composes a full-bleed image with text overlay (portrait-friendly, image is cropped to the frame)
 
 Environment variables:
-  MYPI_LLM_API_KEY     – OpenAI-compatible API key
-  MYPI_LLM_BASE_URL    – API base URL (default: https://api.openai.com/v1)
-  MYPI_LLM_MODEL       – Model name (default: deepseek/deepseek-chat-v3.1)
-  MYPI_LLM_TIMEOUT     – LLM timeout seconds (default: 20)
-  MYPI_LLM_PROXY       – HTTP(S) proxy for LLM calls
-  CIVITAI_TOKEN         – Civitai API token for image generation
-  MYPI_CIVITAI_MODEL    – Civitai model URN (default: DreamShaper XL Lightning)
-  MYPI_CIVITAI_TIMEOUT  – Civitai poll timeout seconds (default: 90)
-  MYPI_CIVITAI_NO_PROXY – if 1/true: call Civitai without HTTP(S) proxy (LLM may still use proxy)
+  MYPI_LLM_API_KEY             – OpenAI-compatible API key
+  MYPI_LLM_BASE_URL            – API base URL (default: https://api.openai.com/v1)
+  MYPI_LLM_MODEL               – Model name (default: deepseek/deepseek-chat-v3.1)
+  MYPI_LLM_TIMEOUT             – LLM timeout seconds (default: 20)
+  MYPI_LLM_PROXY               – HTTP(S) proxy for LLM calls
+  MYPI_PINTEREST_ACCESS_TOKEN  – Pinterest API OAuth access token (or PINTEREST_ACCESS_TOKEN)
+  MYPI_PINTEREST_COUNTRY       – ISO 3166-1 alpha-2 for partner search (default: US)
+  MYPI_PINTEREST_BOARD_ID      – Optional numeric board id (e.g. your wallpaper moodboard). When set, pins from
+                                  this board are loaded first (same account as token), then partner search fills in.
+                                  URL pinterest.com/…/wallpaper/ → id from Pinterest API or site JSON, not the slug alone.
+  MYPI_MOTTO_FETCH_MAX_SIDE    – Max long edge when downloading (default: 2400; matches frame aspect)
+  MYPI_MOTTO_COLOR_BOOST       – PIL Color enhance on the photo layer (default: 1.15 for color e-ink). Set 1.0 to disable.
+  MYPI_MOTTO_IMAGE_NO_PROXY      – if 1/true: Pinterest/image HTTP without proxy (LLM may still use proxy)
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
 import os
+import random
 import re as _re
 import textwrap
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageStat
 
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.cjk_font import _load_cjk_font, _wrap_lines
@@ -46,61 +56,25 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
 
     {
       "motto": "一句中文寄语",
-      "image_prompt": "an English image description for SDXL"
+      "image_prompt": "English keywords for landscape wallpaper image search"
     }
 
     严格要求：
     - 只输出上述 JSON，不加任何其他内容、标签或解释
     - motto: 质朴有深度的中文寄语，40 字以内，不说空话套话，不打招呼
-    - image_prompt: 一段描述性的英文画面 prompt，与寄语意境吻合，要求：
-      * 主体是自然风景（山川、湖泊、森林、花田、海岸、星空等）
-      * 明确指定一种画风，从以下任选：
-        impressionist oil painting / watercolor wash / Studio Ghibli anime style /
-        ink wash sumi-e / soft pastel illustration / cinematic photography
-      * 注重光影描写（golden hour, misty dawn, moonlit, dappled sunlight 等）
-      * 构图清晰，前景+中景+远景层次分明
-      * 绝对不要出现文字、人脸、画框
-      * 控制在 40-60 词
+    - image_prompt: 英文检索用语，用于匹配**全彩「风景壁纸」风**配图（竖屏画框全幅背景 + 底部叠字），与寄语意境相合。
+      整体气质参考 Pinterest 上常见的 **scenery wallpaper / desktop wallpaper art** 类收藏：
+      * **偏插画与氛围**：水彩/数字绘景、吉卜力式开阔自然、海边小镇、花田、阳台望远、林荫街景等**无人物主体**的风景；
+        可与 **anime scenery wallpaper**、**aesthetic landscape illustration**、**cozy village**、**mountain lake** 等语汇同向
+      * 也允许偏写实的 **color landscape photography**，但仍要 **壁纸感**（层次、色彩、治愈），不要新闻纪实风
+      * 必须 **full color**、**colorful**；禁止黑白、单色、sepia、monochrome、人脸特写、室内生活场景为主体
+      * 适合 **vertical / portrait** 或易竖裁的横幅远景；不要画面内文字、画框
+      * 控制在 40–60 词
 """)
 
-_USER_PROMPT = "请给我今天的一句话和匹配的画面。"
-
-# ── Civitai config ──────────────────────────────────────────────────
-_CIVITAI_API = "https://orchestration.civitai.com"
-_DEFAULT_CIVITAI_MODEL = "urn:air:sdxl:checkpoint:civitai:112902@354657"
-_CIVITAI_POLL_INTERVAL = 4
-_CIVITAI_TIMEOUT = 90
-
-# Match civitai-javascript OpenAPI client (request.ts): Accept application/json;
-# errors may be application/problem+json (RFC 7807) with a "detail" field.
-_CIVITAI_JSON_HEADERS = {
-    "Accept": "application/json",
-}
-
-
-def _civitai_http_error_log(exc: urllib.error.HTTPError, what: str) -> None:
-    body = ""
-    try:
-        body = exc.read().decode("utf-8", errors="replace")[:1200]
-    except Exception:
-        pass
-    hdrs = getattr(exc, "headers", None)
-    safe: dict[str, str] = {}
-    if hdrs is not None:
-        for key in ("Content-Type", "Content-Length", "CF-Ray", "X-Request-Id", "Server", "Date"):
-            v = hdrs.get(key)
-            if v:
-                safe[key] = v
-    log.warning(
-        "ai_motto: Civitai %s HTTP %s reason=%r headers=%s body_len=%s body_prefix=%r",
-        what,
-        exc.code,
-        exc.reason,
-        safe,
-        (hdrs.get("Content-Length") or "-") if hdrs else "-",
-        body[:500] if body else "",
-    )
-
+_USER_PROMPT = (
+    "请给我今天的一句寄语，以及相配的全彩「风景壁纸风」英文检索用语（偏插画/氛围壁纸，与桌面风景壁纸审美相近）。"
+)
 
 # ── Fallbacks ───────────────────────────────────────────────────────
 _FALLBACK_MESSAGES = (
@@ -140,9 +114,9 @@ def _build_opener(need_proxy: bool = True) -> urllib.request.OpenerDirector:
     return urllib.request.build_opener()
 
 
-def _civitai_opener() -> urllib.request.OpenerDirector:
-    """Civitai may need a direct route while the LLM still uses MYPI_LLM_PROXY."""
-    v = os.environ.get("MYPI_CIVITAI_NO_PROXY", "").strip().lower()
+def _motto_image_opener() -> urllib.request.OpenerDirector:
+    """Image hosts may need a direct route while the LLM still uses MYPI_LLM_PROXY."""
+    v = os.environ.get("MYPI_MOTTO_IMAGE_NO_PROXY", "").strip().lower()
     if v in ("1", "true", "yes", "on"):
         return urllib.request.build_opener()
     return _build_opener()
@@ -246,129 +220,377 @@ def _call_llm() -> tuple[str, str | None]:
         return _get_fallback(), None
 
 
-# ── Civitai image generation ────────────────────────────────────────
+# ── Web image fetch (keyword → photo) ───────────────────────────────
 
-def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image | None:
-    token = os.environ.get("CIVITAI_TOKEN", "").strip()
-    if not token:
-        log.warning(
-            "ai_motto: CIVITAI_TOKEN not set; skipping Civitai image (set token on the Pi service env)"
+_UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+
+# Glue words / meta-terms to skip when turning LLM English into short search tags (keep landscape nouns).
+_TAG_STOPWORDS = frozenset({
+    "with", "from", "that", "this", "than", "into", "over", "upon", "under", "above",
+    "between", "through", "during", "before", "after", "around", "across", "against",
+    "style", "styles", "detailed", "beautiful", "soft", "gentle",
+    "light", "lights", "shadow", "shadows",
+    "mood", "moody", "atmospheric", "dreamy",
+    "masterpiece", "quality", "highly", "very", "much", "more", "most", "some", "such",
+    "like", "also", "only", "just", "even", "still", "well", "both", "each", "every",
+    "foreground", "background", "middle", "distance", "layered", "layers", "clear", "sharp",
+    "full", "color", "colorful", "colour", "vivid", "rich", "bright", "vertical", "portrait",
+    "composition", "cinematic", "photography", "photo", "realistic", "anime", "illustration",
+    "painting", "watercolor", "impressionist", "pastel", "film", "grain", "bokeh",
+    "studio", "ghibli", "wash", "sumi", "monochrome", "sepia",
+    "wallpaper", "wallpapers", "desktop", "laptop", "aesthetic",
+})
+
+
+def _tags_from_image_prompt(prompt: str) -> str:
+    """Comma-separated keywords from the English image prompt (also used for Pinterest search)."""
+    words = _re.findall(r"[a-zA-Z]{4,}", prompt.lower())
+    picked: list[str] = []
+    seen: set[str] = set()
+    for w in words:
+        if w in _TAG_STOPWORDS or w in seen:
+            continue
+        seen.add(w)
+        picked.append(w)
+        if len(picked) >= 4:
+            break
+    if not picked:
+        return "landscape,scenic,mountain,lake"
+    return ",".join(picked)
+
+
+def _pinterest_search_query_from_tags(tags_csv: str) -> str:
+    """Partner search: scenery wallpaper / desktop art mood (see user moodboard style)."""
+    parts = [t.strip() for t in tags_csv.split(",") if t.strip()]
+    base = " ".join(parts[:5]) if parts else "scenic landscape nature"
+    return (
+        f"{base} scenery wallpaper desktop wallpaper art "
+        "anime landscape illustration aesthetic colorful vibrant "
+        "nature outdoor digital painting watercolor"
+    )
+
+
+def _merge_board_pins_first(
+    opener: urllib.request.OpenerDirector,
+    token: str,
+    board_id: str,
+    seen: set[str],
+    out: list[dict],
+) -> None:
+    """Append pins from a board (with one bookmark page), deduped by id."""
+    bq = urllib.parse.urlencode({"page_size": "50"})
+    board = _pinterest_api_get(
+        f"/boards/{urllib.parse.quote(board_id, safe='')}/pins?{bq}",
+        opener,
+        token,
+    )
+    if not isinstance(board, dict):
+        return
+    items = board.get("items")
+    if isinstance(items, list):
+        for p in items:
+            if not isinstance(p, dict):
+                continue
+            pid = p.get("id")
+            key = str(pid) if pid is not None else ""
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            out.append(p)
+    bm = board.get("bookmark")
+    if bm and isinstance(bm, str):
+        bq2 = urllib.parse.urlencode({"page_size": "50", "bookmark": bm})
+        board2 = _pinterest_api_get(
+            f"/boards/{urllib.parse.quote(board_id, safe='')}/pins?{bq2}",
+            opener,
+            token,
         )
-        return None
+        if isinstance(board2, dict):
+            items2 = board2.get("items")
+            if isinstance(items2, list):
+                for p in items2:
+                    if not isinstance(p, dict):
+                        continue
+                    pid = p.get("id")
+                    key = str(pid) if pid is not None else ""
+                    if key and key in seen:
+                        continue
+                    if key:
+                        seen.add(key)
+                    out.append(p)
 
-    model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
-    poll_timeout = int(os.environ.get("MYPI_CIVITAI_TIMEOUT", str(_CIVITAI_TIMEOUT)))
 
-    is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
-    # Match Civitai JS SDK defaults (low steps/cfg for SDXL has caused HTTP 500 on orchestration).
-    if is_sdxl:
-        full_prompt = f"{prompt}, masterpiece, best quality, highly detailed, no text, no watermark, no frame"
-        neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres, ugly, disfigured:1.4)"
-    else:
-        full_prompt = f"{prompt}, masterpiece, best quality, no text, no watermark"
-        neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres:1.4)"
-    steps, cfg, clip_skip = 20, 7, 2
+def _pinterest_access_token() -> str:
+    return (
+        os.environ.get("MYPI_PINTEREST_ACCESS_TOKEN", "").strip()
+        or os.environ.get("PINTEREST_ACCESS_TOKEN", "").strip()
+    )
 
-    job_payload = json.dumps({
-        "$type": "textToImage",
-        "model": model_urn,
-        "params": {
-            "prompt": full_prompt,
-            "negativePrompt": neg_prompt,
-            "scheduler": "EulerA",
-            "steps": steps,
-            "cfgScale": cfg,
-            "width": width,
-            "height": height,
-            "clipSkip": clip_skip,
-        },
-    }).encode()
 
-    opener = _civitai_opener()
-
-    # Submit job
-    _UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-
+def _pinterest_api_get(
+    path_query: str,
+    opener: urllib.request.OpenerDirector,
+    token: str,
+    timeout: int = 30,
+) -> dict | list | None:
+    """GET https://api.pinterest.com/v5/... with Bearer token."""
+    url = f"https://api.pinterest.com/v5{path_query}"
     req = urllib.request.Request(
-        f"{_CIVITAI_API}/v1/consumer/jobs",
-        data=job_payload,
+        url,
         headers={
-            **_CIVITAI_JSON_HEADERS,
-            "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
             "User-Agent": _UA,
+            "Accept": "application/json",
         },
-        method="POST",
+        method="GET",
     )
     try:
-        with opener.open(req, timeout=30) as resp:
-            submit = json.loads(resp.read())
-        job_token = submit.get("token")
-        if not job_token:
-            log.warning("ai_motto: Civitai submit returned no token: %s", submit)
-            return None
-        log.info("ai_motto: Civitai job submitted, token=%s", job_token[:20])
+        with opener.open(req, timeout=timeout) as resp:
+            raw = resp.read()
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        _civitai_http_error_log(exc, "submit")
-        return None
-    except Exception as exc:
-        log.warning("ai_motto: Civitai submit failed: %s", exc)
-        return None
-
-    # Poll for completion
-    deadline = time.monotonic() + poll_timeout
-    image_url = None
-    while time.monotonic() < deadline:
-        time.sleep(_CIVITAI_POLL_INTERVAL)
-        poll_req = urllib.request.Request(
-            f"{_CIVITAI_API}/v1/consumer/jobs?token={job_token}&wait=true",
-            headers={
-                **_CIVITAI_JSON_HEADERS,
-                "Authorization": f"Bearer {token}",
-                "User-Agent": _UA,
-            },
-            method="GET",
-        )
+        body = ""
         try:
-            with opener.open(poll_req, timeout=30) as resp:
-                status = json.loads(resp.read())
-            jobs = status.get("jobs", [])
-            if not jobs:
-                continue
-            job = jobs[0]
-            result = job.get("result")
-            if isinstance(result, list) and result:
-                blob = result[0]
-                if isinstance(blob, dict) and blob.get("available"):
-                    image_url = blob.get("blobUrl")
-                    if image_url:
-                        break
-            elif isinstance(result, dict):
-                image_url = result.get("blobUrl") or result.get("url")
-                if image_url:
-                    break
-            if job.get("scheduled") is False and not result:
-                log.warning("ai_motto: Civitai job finished with no result")
-                return None
-        except urllib.error.HTTPError as exc:
-            _civitai_http_error_log(exc, "poll")
-        except Exception as exc:
-            log.warning("ai_motto: Civitai poll error: %s", exc)
-
-    if not image_url:
-        log.warning("ai_motto: Civitai timed out after %ds", poll_timeout)
+            body = exc.read().decode("utf-8", errors="replace")[:800]
+        except Exception:
+            pass
+        log.warning(
+            "ai_motto: Pinterest API HTTP %s %s body_prefix=%r",
+            exc.code,
+            path_query[:120],
+            body[:400],
+        )
         return None
-
-    # Download image
-    log.info("ai_motto: Civitai image ready, downloading %s", image_url[:80])
-    try:
-        dl_req = urllib.request.Request(image_url)
-        with opener.open(dl_req, timeout=30) as resp:
-            img_data = resp.read()
-        return Image.open(io.BytesIO(img_data)).convert("RGB")
     except Exception as exc:
-        log.warning("ai_motto: Civitai image download failed: %s", exc)
+        log.warning("ai_motto: Pinterest API request failed %s %s", path_query[:120], exc)
         return None
+
+
+def _best_pinterest_image_url(pin: dict) -> str | None:
+    """Pick the largest raster URL from pin media.images."""
+    media = pin.get("media") or {}
+    images = media.get("images") or {}
+    if not isinstance(images, dict):
+        return None
+    best_url = None
+    best_px = 0
+    for img in images.values():
+        if not isinstance(img, dict):
+            continue
+        url = img.get("url")
+        if not url:
+            continue
+        w = int(img.get("width") or 0)
+        h = int(img.get("height") or 0)
+        px = w * h
+        if px >= best_px:
+            best_px = px
+            best_url = url
+    return best_url
+
+
+def _pin_maybe_enrich(pin: dict, opener: urllib.request.OpenerDirector, token: str) -> dict:
+    """If search summary lacks media.images, fetch full pin by id."""
+    if _best_pinterest_image_url(pin):
+        return pin
+    pid = pin.get("id")
+    if not pid:
+        return pin
+    full = _pinterest_api_get(f"/pins/{urllib.parse.quote(str(pid), safe='')}", opener, token)
+    return full if isinstance(full, dict) else pin
+
+
+def _pinterest_collect_pin_candidates(
+    opener: urllib.request.OpenerDirector,
+    token: str,
+    search_term: str,
+    board_id: str | None,
+) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    if board_id:
+        _merge_board_pins_first(opener, token, board_id, seen, out)
+        if not out:
+            log.warning(
+                "ai_motto: Pinterest board %s returned no pins (check id & token scopes)",
+                board_id[:16],
+            )
+
+    cc = (os.environ.get("MYPI_PINTEREST_COUNTRY", "US").strip() or "US").upper()[:2]
+    limit = min(50, int(os.environ.get("MYPI_PINTEREST_SEARCH_LIMIT", "25")))
+    q = urllib.parse.urlencode({"term": search_term, "country_code": cc, "limit": str(limit)})
+    partner = _pinterest_api_get(f"/search/partner/pins?{q}", opener, token)
+    if isinstance(partner, dict):
+        items = partner.get("items")
+        if isinstance(items, list):
+            for p in items:
+                if not isinstance(p, dict):
+                    continue
+                pid = p.get("id")
+                key = str(pid) if pid is not None else ""
+                if key and key in seen:
+                    continue
+                if key:
+                    seen.add(key)
+                out.append(p)
+        bm = partner.get("bookmark")
+        if bm and isinstance(bm, str) and len(out) < limit * 2:
+            q2 = urllib.parse.urlencode({
+                "term": search_term,
+                "country_code": cc,
+                "limit": str(limit),
+                "bookmark": bm,
+            })
+            partner2 = _pinterest_api_get(f"/search/partner/pins?{q2}", opener, token)
+            if isinstance(partner2, dict):
+                items2 = partner2.get("items")
+                if isinstance(items2, list):
+                    for p in items2:
+                        if not isinstance(p, dict):
+                            continue
+                        pid = p.get("id")
+                        key = str(pid) if pid is not None else ""
+                        if key and key in seen:
+                            continue
+                        if key:
+                            seen.add(key)
+                        out.append(p)
+
+    if not out and board_id:
+        log.warning("ai_motto: no Pinterest pins after board + partner search")
+
+    return out
+
+
+def _picsum_seed_per_render(motto: str, tags: str) -> str:
+    """New seed every render so Picsum is not stuck on one image per day."""
+    h = hashlib.sha256(f"{time.time_ns()}:{tags}:{motto[:120]}".encode()).hexdigest()[:24]
+    return f"mypi-{h}"
+
+
+def _rgb_looks_grayscale_photo(img: Image.Image) -> bool:
+    """True if the image looks monochrome (do not use as 每日寄语配图)."""
+    rgb = img.convert("RGB")
+    if rgb.width * rgb.height > 800_000:
+        rgb = rgb.resize(
+            (max(1, rgb.width // 2), max(1, rgb.height // 2)),
+            Image.LANCZOS,
+        )
+    r, g, b = ImageStat.Stat(rgb).mean[:3]
+    spread = max(abs(r - g), abs(r - b), abs(g - b))
+    # Color photos typically have much higher mean channel separation than B&W stock.
+    return spread < 6.0
+
+
+def _to_full_color_rgb(img: Image.Image) -> Image.Image:
+    """Full RGB for color e-ink; default slight Color boost for washed panels."""
+    rgb = img.convert("RGB")
+    raw = os.environ.get("MYPI_MOTTO_COLOR_BOOST", "1.15").strip()
+    try:
+        factor = float(raw)
+    except ValueError:
+        factor = 1.15
+    if factor > 1.01 and factor <= 2.0:
+        rgb = ImageEnhance.Color(rgb).enhance(factor)
+    return rgb
+
+
+def _download_image_url(url: str, opener: urllib.request.OpenerDirector, timeout: int = 45) -> Image.Image | None:
+    req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            img_data = resp.read()
+        im = Image.open(io.BytesIO(img_data))
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA") if "A" in im.mode else im.convert("RGB")
+        return _to_full_color_rgb(im.convert("RGB"))
+    except Exception as exc:
+        log.warning("ai_motto: image download failed url=%s err=%s", url[:120], exc)
+        return None
+
+
+def _fetch_pinterest_motto_image(
+    image_prompt: str,
+    motto: str,
+) -> Image.Image | None:
+    token = _pinterest_access_token()
+    if not token:
+        log.warning(
+            "ai_motto: MYPI_PINTEREST_ACCESS_TOKEN not set; cannot use Pinterest"
+        )
+        return None
+
+    tags = _tags_from_image_prompt(image_prompt)
+    term = _pinterest_search_query_from_tags(tags)
+    opener = _motto_image_opener()
+    board_id = os.environ.get("MYPI_PINTEREST_BOARD_ID", "").strip() or None
+
+    pins = _pinterest_collect_pin_candidates(opener, token, term, board_id)
+    if not pins:
+        log.warning("ai_motto: Pinterest returned no pin candidates for term=%r", term[:80])
+        return None
+
+    # Shuffle each render so we don't always pick the same pin when motto/tags repeat same day.
+    rng = random.Random(time.time_ns())
+    pins_try = pins[:]
+    rng.shuffle(pins_try)
+
+    for pin in pins_try:
+        pin = _pin_maybe_enrich(pin, opener, token)
+        url = _best_pinterest_image_url(pin)
+        if not url:
+            continue
+        log.info("ai_motto: Pinterest image candidate pin=%s", str(pin.get("id", ""))[:20])
+        img = _download_image_url(url, opener)
+        if img is None:
+            continue
+        if _rgb_looks_grayscale_photo(img):
+            log.info("ai_motto: skipped grayscale Pinterest image, trying next pin")
+            continue
+        return img
+
+    log.warning("ai_motto: no Pinterest image downloaded after trying %d pins", len(pins))
+    return None
+
+
+def _fetch_loremflickr_fallback(image_prompt: str, width: int, height: int, motto: str) -> Image.Image | None:
+    tags = _tags_from_image_prompt(image_prompt)
+    opener = _motto_image_opener()
+    path = urllib.parse.quote(tags, safe=",")
+    log.info("ai_motto: fallback loremflickr tags=%r %dx%d", tags, width, height)
+    for attempt in range(12):
+        bust = time.time_ns() ^ attempt
+        lf_url = f"https://loremflickr.com/g/{width}/{height}/{path}?random={bust}"
+        img = _download_image_url(lf_url, opener)
+        if img is None:
+            continue
+        if _rgb_looks_grayscale_photo(img):
+            log.info("ai_motto: loremflickr grayscale frame, retry %s/12", attempt + 1)
+            continue
+        return img
+    log.warning("ai_motto: loremflickr exhausted; trying Picsum with color-only retries")
+    for attempt in range(24):
+        seed = _picsum_seed_per_render(f"{motto}:{attempt}:{time.time_ns()}", tags)
+        url = f"https://picsum.photos/seed/{urllib.parse.quote(seed, safe='')}/{width}/{height}"
+        img = _download_image_url(url, opener)
+        if img is None:
+            continue
+        if _rgb_looks_grayscale_photo(img):
+            log.info("ai_motto: picsum grayscale, retry %s/24", attempt + 1)
+            continue
+        return img
+    log.warning("ai_motto: no color image found (all sources looked B&W); text-only layout")
+    return None
+
+
+def _fetch_web_motto_image(image_prompt: str, width: int, height: int, motto: str) -> Image.Image | None:
+    """Pinterest first; optional LoremFlickr if token missing or no pins."""
+    art = _fetch_pinterest_motto_image(image_prompt, motto)
+    if art is not None:
+        return art
+    return _fetch_loremflickr_fallback(image_prompt, width, height, motto)
 
 
 # ── Composition ─────────────────────────────────────────────────────
@@ -381,19 +603,20 @@ _ACCENT_COLOR = (85, 80, 72)
 _DIVIDER_COLOR = (200, 196, 188)
 
 
-def _infer_gen_size(canvas_w: int, canvas_h: int, *, is_sdxl: bool) -> tuple[int, int]:
-    """Size for Civitai: match frame aspect, cap long side (1024 SDXL / 512 SD1.5), multiples of 64."""
-    max_side = 1024 if is_sdxl else 512
+def _infer_fetch_size(canvas_w: int, canvas_h: int) -> tuple[int, int]:
+    """Pixel size for non-Pinterest fallbacks: same aspect as the frame, long edge capped."""
+    max_side = int(os.environ.get("MYPI_MOTTO_FETCH_MAX_SIDE", "2400"))
+    max_side = max(400, min(max_side, 8192))
     cw, ch = max(1, canvas_w), max(1, canvas_h)
+    if max(cw, ch) <= max_side:
+        return cw, ch
     if cw >= ch:
-        gen_w = min(cw, max_side)
-        gen_h = int(gen_w * ch / cw)
+        gen_w = max_side
+        gen_h = max(1, int(round(gen_w * ch / cw)))
     else:
-        gen_h = min(ch, max_side)
-        gen_w = int(gen_h * cw / ch)
-    gen_w = max(256, (gen_w // 64) * 64)
-    gen_h = max(256, (gen_h // 64) * 64)
-    return gen_w, gen_h
+        gen_h = max_side
+        gen_w = max(1, int(round(gen_h * cw / ch)))
+    return max(400, gen_w), max(400, gen_h)
 
 
 def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
@@ -587,16 +810,14 @@ class AiMottoTemplate(WallTemplate):
         raw_ov = params.get("text")
         override_text = raw_ov.strip() if isinstance(raw_ov, str) else ""
         if override_text:
-            log.info("ai_motto: templateParams.text set; using fixed motto, no LLM/Civitai image")
+            log.info("ai_motto: templateParams.text set; using fixed motto, no LLM/web image")
             motto, image_prompt = override_text, None
         else:
             motto, image_prompt = _call_llm()
 
         art = None
         if image_prompt:
-            model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
-            is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
-            gen_w, gen_h = _infer_gen_size(w, h, is_sdxl=is_sdxl)
-            art = _generate_civitai_image(image_prompt, gen_w, gen_h)
+            gen_w, gen_h = _infer_fetch_size(w, h)
+            art = _fetch_web_motto_image(image_prompt, gen_w, gen_h, motto)
 
         return _compose(motto, art, w, h)

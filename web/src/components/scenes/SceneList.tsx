@@ -1,4 +1,4 @@
-import { Pencil, Play, Power, Trash2 } from "lucide-react"
+import { Pencil, Power, Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import {
@@ -44,9 +44,9 @@ function sceneListPrimaryAndHint(
   return { primary: stored, showHint: true, hint: label }
 }
 
-/** 与时间轴行首列 10.75rem 对齐；中为调度说明；末为操作（含立即上屏） */
+/** 与时间轴行首列 10.75rem 对齐；中为调度说明；末为启用 / 编辑 / 删除 */
 const GRID_COLS =
-  "[grid-template-columns:10.75rem_minmax(0,1fr)_8.5rem]" as const
+  "[grid-template-columns:10.75rem_minmax(0,1fr)_7.25rem]" as const
 
 /** 与 WallRunsTimeline 行高一致 */
 const SCENE_ROW_MIN_H = "min-h-[2.75rem]"
@@ -59,17 +59,12 @@ export function SceneList({
   onToggle,
   onEdit,
   onDelete,
-  onShowNow,
-  sceneBusySceneId,
 }: {
   scenes: Scene[]
   templates: TemplateMeta[]
   onToggle: (scene: Scene, enabled: boolean) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
-  onShowNow?: (scene: Scene) => void
-  /** 与 useWallSession.rowBusyId 对齐：上屏进行中时禁用该场景按钮 */
-  sceneBusySceneId?: string | null
 }) {
   const tMap = Object.fromEntries(templates.map((t) => [t.templateId, t]))
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
@@ -171,20 +166,6 @@ export function SceneList({
                   >
                     <Power className="h-3 w-3" strokeWidth={ICON_STROKE} />
                   </Button>
-                  {onShowNow && s.enabled ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
-                      disabled={sceneBusySceneId === s.id}
-                      aria-label={`立即上屏「${primary}」`}
-                      aria-busy={sceneBusySceneId === s.id}
-                      onClick={() => onShowNow(s)}
-                    >
-                      <Play className="h-3 w-3" strokeWidth={ICON_STROKE} />
-                    </Button>
-                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"

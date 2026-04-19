@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import logging
@@ -11,11 +12,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from domain.models import AppConfig, Scene, UpcomingItem, WallState
+from domain.models import AppConfig, Scene, UpcomingItem, WallRun, WallState
 from domain.utils import parse_iso as _parse_iso
 from orchestrator.next_run import future_fire_times, global_min_next, next_fire_time
 from pipeline.wall_show import WallPipeline
 from renderers.registry import TemplateRegistry
+from storage.paths import output_dir, wall_runs_path
 from storage.stores import load_config, load_schedule_state, prune_old_data
 from zoneinfo import ZoneInfo
 
@@ -49,6 +51,65 @@ class WallOrchestrator:
         self._wall_state = WallState()
         self._worker_thread: threading.Thread | None = None
         self._drain_count = 0
+        self._hydrate_wall_state_from_disk()
+
+    def _hydrate_wall_state_from_disk(self) -> None:
+        """gunicorn/systemd 重启后内存 WallState 为空，但屏上可能仍是上次画面；从 wall_runs + output 恢复预览。"""
+        if self._wall_state.current_scene_id is not None:
+            return
+        p = wall_runs_path()
+        if not p.is_file():
+            return
+        try:
+            lines = p.read_text(encoding="utf-8").strip().splitlines()
+        except OSError:
+            return
+        if not lines:
+            return
+        run: WallRun | None = None
+        for line in reversed(lines):
+            try:
+                wr = WallRun.model_validate(json.loads(line))
+            except Exception:
+                continue
+            if wr.ok and wr.output_path and str(wr.output_path).strip():
+                run = wr
+                break
+        if run is None:
+            return
+        bn = Path(run.output_path).name
+        if not bn:
+            return
+        out_root = output_dir().resolve()
+        fp = (out_root / run.id / bn).resolve()
+        try:
+            fp.relative_to(out_root)
+        except ValueError:
+            return
+        if not fp.is_file():
+            log.warning(
+                "Orchestrator: hydrate skipped (missing output file) run_id=%s path=%s",
+                run.id,
+                fp,
+            )
+            return
+        preview = f"/api/v1/output/{run.id}/{bn}"
+        ws = self._wall_state
+        self._wall_state = WallState(
+            current_scene_id=run.scene_id,
+            current_scene_name=run.scene_name or run.template_id,
+            current_template_id=run.template_id,
+            current_preview_url=preview,
+            upcoming=ws.upcoming,
+            display_active_scene_id=ws.display_active_scene_id,
+            queued_display_scene_ids=ws.queued_display_scene_ids,
+        )
+        log.info(
+            "Orchestrator: Hydrated wall state from latest ok run run_id=%s scene_id=%s preview=%s",
+            run.id,
+            run.scene_id,
+            preview,
+        )
 
     @property
     def wall_state(self) -> WallState:

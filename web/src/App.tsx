@@ -46,7 +46,6 @@ export default function App() {
     rowBusyId,
     showToast,
     openEdit,
-    runShowNow,
     runShowNowTemplate,
     handleEditDialogOpenChange,
     commitFrameDialog,
@@ -169,8 +168,6 @@ export default function App() {
                 onToggle={handleSceneToggle}
                 onEdit={openEdit}
                 onDelete={handleSceneDelete}
-                onShowNow={runShowNow}
-                sceneBusySceneId={rowBusyId}
               />
             </section>
           </div>

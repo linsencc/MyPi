@@ -149,7 +149,8 @@ export function saveFrameConfigToStorage(cfg: FrameDisplayConfig): void {
 
 /**
  * 预览用 CSS filter：顺序接近 apply_image_enhancement（亮度→对比→色饱和→锐化近似）。
- * 彩色墨水屏 demo：保留色彩，不套 grayscale。
+ * 彩色墨水屏：不套 grayscale。饱和度滑到 0 时 CSS saturate(0) 会变成纯灰预览，
+ * 与实机彩色不符，故对 saturate 设下限。
  */
 export function getPreviewImageFilter(s: InkypiImageSettings): string {
   const b = Math.max(0.2, Math.min(2.5, s.brightness))
@@ -158,6 +159,6 @@ export function getPreviewImageFilter(s: InkypiImageSettings): string {
   const ink = Math.max(0, Math.min(1, s.inky_saturation))
   const sharp = Math.max(0, Math.min(2, s.sharpness))
   const contrastBoost = c * (1 + Math.max(0, sharp - 1) * 0.15) * (0.88 + ink * 0.28)
-  const sat = col * (0.75 + ink * 0.5)
+  const sat = Math.max(0.55, col * (0.75 + ink * 0.5))
   return `brightness(${b}) contrast(${contrastBoost}) saturate(${sat})`
 }

@@ -35,10 +35,11 @@ export function getFallbackPlaceholder(label?: string) {
   return getPreviewPlaceholderSrc(label + " 暂无预览")
 }
 
-/** http(s) 或同源相对路径（经 Vite 代理到后端的 /api/...） */
+/** http(s)、同源相对路径、或内联 data URI（占位图等） */
 export function isUsableImageRef(s: string | null | undefined): boolean {
   if (!s?.trim()) return false
   const t = s.trim()
   if (t.startsWith("/")) return true
+  if (t.startsWith("data:image/")) return true
   return /^https?:\/\//i.test(t)
 }
