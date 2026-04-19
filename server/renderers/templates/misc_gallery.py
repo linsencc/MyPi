@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 
 from PIL import Image, ImageDraw
 
@@ -14,6 +15,58 @@ _SOFT_BREAK_AFTER: frozenset[str] = frozenset(
 )
 # Do not leave these as the first character on a new line (hang on previous).
 _NO_LINE_START: frozenset[str] = frozenset("，。！？；：、）」』’”,.!?;:")
+
+# Reading comfort: ~32 fullwidth-ish columns, airy line height, warm paper tone.
+_IDEAL_HANZI_COLUMNS = 32
+_LINE_HEIGHT_FACTOR = 1.58
+_PARAGRAPH_GAP_FACTOR = 0.44
+_MEASURE_PROBE = "永"
+_BG_RGB = (252, 250, 245)
+_FG_RGB = (44, 46, 52)
+_VERTICAL_BIAS = 0.42
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _is_cjk(ch: str) -> bool:
+    return len(ch) == 1 and bool(_CJK_RE.match(ch))
+
+
+def _is_latin_letter(ch: str) -> bool:
+    return len(ch) == 1 and ch.isascii() and ch.isalpha()
+
+
+def _extend_past_bad_break(
+    draw: ImageDraw.ImageDraw,
+    font,
+    paragraph: str,
+    i: int,
+    j: int,
+    max_width: int,
+) -> int:
+    """Avoid breaking between adjacent CJK (e.g. 可|能) or Latin letters without soft punctuation."""
+    n = len(paragraph)
+    max_slack = max_width + max(12, int(max_width * 0.08))
+    while j < n:
+        left, right = paragraph[j - 1], paragraph[j]
+        bad_cjk = (
+            _is_cjk(left)
+            and _is_cjk(right)
+            and left not in _SOFT_BREAK_AFTER
+        )
+        bad_lat = (
+            _is_latin_letter(left)
+            and _is_latin_letter(right)
+            and left not in _SOFT_BREAK_AFTER
+        )
+        if not (bad_cjk or bad_lat):
+            break
+        if _line_width(draw, paragraph[i : j + 1], font) <= max_slack:
+            j += 1
+        else:
+            break
+    return j
+
 
 _MISC_QUOTES: tuple[str, ...] = (
     # 与 Obsidian《杂锦.md》编号条目一一对应（一条一行，不合并）。
@@ -207,12 +260,12 @@ def _wrap_paragraph_to_width(
         if j <= i:
             j = i + 1
         if j < n:
-            limit = max(i + 1, j - 14)
             k = j
-            while k > limit and paragraph[k - 1] not in _SOFT_BREAK_AFTER:
+            while k > i and paragraph[k - 1] not in _SOFT_BREAK_AFTER:
                 k -= 1
             if k > i:
                 j = k
+        j = _extend_past_bad_break(draw, font, paragraph, i, j, max_width)
         line = paragraph[i:j].strip()
         if line:
             while line and line[0] in _NO_LINE_START:
@@ -258,13 +311,27 @@ def _gallery_total_height(
     return h
 
 
+def _body_measure_width(
+    draw: ImageDraw.ImageDraw, font, full_inner_width: int
+) -> int:
+    """Cap line length for comfortable CJK measure (long lines tire the eye on e-ink)."""
+    cw = max(1, _line_width(draw, _MEASURE_PROBE, font))
+    return min(full_inner_width, int(cw * _IDEAL_HANZI_COLUMNS))
+
+
+def _line_height_from_font(draw: ImageDraw.ImageDraw, font, size_px: int) -> int:
+    _, top, _, bottom = draw.textbbox((0, 0), "汉文Agyp", font=font)
+    core = max(1, bottom - top)
+    return max(int(core * _LINE_HEIGHT_FACTOR), int(size_px * 1.42))
+
+
 class MiscGalleryTemplate(WallTemplate):
     """Each render shows one random entry from `_MISC_QUOTES` (unless `templateParams.text` is set)."""
 
     display_name = "杂锦摘句"
 
     def render(self, ctx: RenderContext) -> Image.Image:
-        from renderers.templates.daily_motto import _load_cjk_font
+        from renderers.templates.cjk_font import _load_cjk_font
 
         base = dict(ctx.scene.template_params or {})
         raw = base.get("text")
@@ -276,35 +343,38 @@ class MiscGalleryTemplate(WallTemplate):
         w = ctx.device_profile.get("width", 800)
         h = ctx.device_profile.get("height", 600)
         scale = min(w, h) / 600
-        margin_x = max(28, int(w * 0.075))
-        margin_y = max(36, int(h * 0.055))
+        margin_x = max(40, int(w * 0.088))
+        margin_y = max(48, int(h * 0.062))
         inner_h = h - 2 * margin_y
-        max_width = w - 2 * margin_x
+        full_inner_w = w - 2 * margin_x
+        line_budget = max(28, min(44, int(inner_h / max(20, 26 * scale * 1.35))))
 
-        img = Image.new("RGB", (w, h), color=(248, 246, 240))
+        img = Image.new("RGB", (w, h), color=_BG_RGB)
         draw = ImageDraw.Draw(img)
-        fill = (38, 42, 48)
+        fill = _FG_RGB
 
-        size_px = max(22, int(30 * scale))
-        min_px = max(18, int(17 * scale))
+        size_px = max(23, int(31 * scale))
+        min_px = max(19, int(18 * scale))
         lines_spec: list[str | None] = []
         line_h = 0
         paragraph_gap = 0
+        body_w = full_inner_w
 
         while size_px >= min_px:
             font = _load_cjk_font(size_px)
-            line_h = int(size_px * 1.48)
-            paragraph_gap = max(6, int(size_px * 0.38))
-            lines_spec = _layout_gallery_lines(draw, font, text, max_width)
+            body_w = _body_measure_width(draw, font, full_inner_w)
+            line_h = _line_height_from_font(draw, font, size_px)
+            paragraph_gap = max(8, int(line_h * _PARAGRAPH_GAP_FACTOR))
+            lines_spec = _layout_gallery_lines(draw, font, text, body_w)
             n_lines = sum(1 for x in lines_spec if x is not None)
-            n_breaks = sum(1 for x in lines_spec if x is None)
             total = _gallery_total_height(lines_spec, line_h, paragraph_gap)
-            if n_lines <= 32 and total <= inner_h:
+            if n_lines <= line_budget and total <= inner_h:
                 break
             size_px -= 2
 
         total_block = _gallery_total_height(lines_spec, line_h, paragraph_gap)
-        y0 = margin_y + max(0, (inner_h - total_block) // 2)
+        slack = max(0, inner_h - total_block)
+        y0 = margin_y + int(slack * _VERTICAL_BIAS)
         y = y0
         for item in lines_spec:
             if item is None:
@@ -313,7 +383,7 @@ class MiscGalleryTemplate(WallTemplate):
             ln = item[:500]
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
-            x = max(margin_x, (w - tw) // 2)
+            x = margin_x + max(0, (full_inner_w - tw) // 2)
             draw.text((x, y), ln, fill=fill, font=font)
             y += line_h
 

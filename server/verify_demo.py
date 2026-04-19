@@ -43,7 +43,7 @@ def main() -> int:
     r = c.get("/api/v1/templates")
     t = j(r)
     tids = {x.get("templateId") for x in (t or [])}
-    if not t or "daily_motto" not in tids or "schedule_stamp" not in tids:
+    if not t or "misc_gallery" not in tids or "ai_motto" not in tids:
         print("FAIL templates", r.status_code, t)
         fails += 1
     else:
@@ -56,6 +56,20 @@ def main() -> int:
         fails += 1
     else:
         print("OK config", len(cfg["scenes"]), "scenes")
+
+    if cfg and not cfg.get("scenes"):
+        r = c.post(
+            "/api/v1/scenes",
+            data=json.dumps({"templateId": "misc_gallery", "name": "杂锦摘句"}),
+            content_type="application/json",
+        )
+        if r.status_code != 201:
+            print("FAIL seed scene for smoke test", r.status_code, r.data[:400])
+            fails += 1
+        else:
+            r = c.get("/api/v1/config")
+            cfg = j(r)
+            print("OK seeded scene, now", len(cfg.get("scenes") or []), "scenes")
 
     r = c.get("/api/v1/scenes")
     scenes = j(r)
@@ -92,30 +106,6 @@ def main() -> int:
                 fails += 1
             else:
                 print("OK show-now embeds preview URL")
-
-        stamp_sid = next(
-            (s["id"] for s in (cfg.get("scenes") or []) if s.get("templateId") == "schedule_stamp"),
-            None,
-        )
-        if stamp_sid:
-            r = c.post(f"/api/v1/scenes/{stamp_sid}/show-now")
-            sn2 = j(r)
-            if not sn2 or not sn2.get("ok"):
-                print("FAIL schedule_stamp show-now", r.status_code, r.data[:300])
-                fails += 1
-            else:
-                ws2 = _wait_wall_preview(c, j, url_contains="schedule_stamp")
-                p2 = (ws2 or {}).get("currentPreviewUrl")
-                if not p2 or "schedule_stamp" not in str(p2):
-                    print("FAIL schedule_stamp preview path after wait", p2)
-                    fails += 1
-                else:
-                    r = c.get(p2)
-                    if r.status_code != 200 or r.data[:8] != b"\x89PNG\r\n\x1a\n":
-                        print("FAIL schedule_stamp PNG", r.status_code, p2)
-                        fails += 1
-                    else:
-                        print("OK schedule_stamp show-now PNG")
 
         r = c.get("/api/v1/wall/state")
         ws = j(r)
@@ -164,7 +154,11 @@ def main() -> int:
             fails += 1
 
         delay_ms = os.environ.get("MYPI_EINK_SHOW_DELAY_MS", "").strip()
-        if delay_ms and stamp_sid and stamp_sid != sid:
+        alt_sid = next(
+            (s["id"] for s in (cfg.get("scenes") or []) if s.get("id") != sid),
+            None,
+        )
+        if delay_ms and alt_sid:
             print("--- queue smoke (MYPI_EINK_SHOW_DELAY_MS=%s)" % delay_ms)
             r = c.post(f"/api/v1/scenes/{sid}/show-now")
             snq1 = j(r)
@@ -172,7 +166,7 @@ def main() -> int:
                 print("FAIL queue smoke first show-now")
                 fails += 1
             else:
-                r2 = c.post(f"/api/v1/scenes/{stamp_sid}/show-now")
+                r2 = c.post(f"/api/v1/scenes/{alt_sid}/show-now")
                 snq = j(r2)
                 if not snq or not snq.get("ok"):
                     print("FAIL queue smoke second show-now", r2.status_code)
@@ -181,11 +175,11 @@ def main() -> int:
                     wsq = snq.get("wallState") or {}
                     q = wsq.get("queuedDisplaySceneIds") or []
                     active = wsq.get("displayActiveSceneId")
-                    if stamp_sid in q or active == sid:
+                    if alt_sid in q or active == sid:
                         print("OK queue smoke (active=%r queued=%r)" % (active, q))
                     else:
                         print(
-                            "FAIL queue smoke expected stamp in queue or sid active",
+                            "FAIL queue smoke expected alt in queue or sid active",
                             "active=",
                             active,
                             "queued=",

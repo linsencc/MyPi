@@ -41,11 +41,11 @@ def create_app() -> Flask:
     registry = discover_templates()
     set_config_registry(registry)
 
-    from renderers.templates.daily_motto import preflight_font
+    from renderers.templates.cjk_font import preflight_font
     try:
         preflight_font()
     except RuntimeError:
-        logging.getLogger(__name__).warning("CJK font not found at startup; daily_motto may fail")
+        logging.getLogger(__name__).warning("CJK font not found at startup; text templates may fail")
 
     sink = create_display_sink()
     pipeline = WallPipeline(registry, sink)

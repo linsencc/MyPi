@@ -18,7 +18,7 @@ def _scene_cron(weekdays: list[int], time_s: str) -> Scene:
     return Scene.model_validate(
         {
             "id": "t-scene",
-            "templateId": "daily_motto",
+            "templateId": "misc_gallery",
             "enabled": True,
             "schedule": {"type": "cron_weekly", "time": time_s, "weekdays": weekdays},
         }
@@ -29,7 +29,7 @@ def _scene_interval(sec: int) -> Scene:
     return Scene.model_validate(
         {
             "id": "t-int",
-            "templateId": "daily_motto",
+            "templateId": "misc_gallery",
             "enabled": True,
             "schedule": {"type": "interval", "intervalSeconds": sec},
         }
@@ -103,7 +103,7 @@ def main() -> int:
     b = Scene.model_validate(
         {
             "id": "other",
-            "templateId": "daily_motto",
+            "templateId": "misc_gallery",
             "enabled": True,
             "schedule": {"type": "cron_weekly", "time": "09:00", "weekdays": [1]},
         }

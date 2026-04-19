@@ -53,7 +53,7 @@ def _atomic_write_json(path: Path, data: str) -> None:
 
 
 def default_config() -> AppConfig:
-    s = default_scene_for_template("daily_motto", display_name="每日寄语")
+    s = default_scene_for_template("misc_gallery", display_name="杂锦摘句")
     return AppConfig(scenes=[s])
 
 

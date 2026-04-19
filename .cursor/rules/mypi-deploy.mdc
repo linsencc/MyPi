@@ -65,3 +65,16 @@ ssh linsen@192.168.1.118 "sudo journalctl -u mypi --no-pager -n 20"
 - 更新 `deploy/mypi.service` 后需额外执行 `sudo cp ... /etc/systemd/system/ && sudo systemctl daemon-reload`
 - Pi 是 Raspberry Pi Zero 2 W，资源有限；e-ink 刷新约 27 秒属正常
 - Pi 上的 Python venv 在 `~/workspace/MyPi/.venv/`，新增 pip 依赖需 SSH 进去安装
+
+## Agent / 协作约定：改完即部署
+
+凡在本仓库**修改了会在树莓派上运行的内容**（`server/` 任意文件、`web/` 构建并需更新 Pi 上 `dist/`、`deploy/` 等），在**同一次任务内**应**主动完成部署**（按上文 scp + `systemctl restart mypi.service`，前端则 build 后推 dist），**不要**只改本地代码就结束；也**不要**把「请你自行部署」甩给用户。
+
+**例外**（才可省略当次部署）：用户明确说本次只改本地、不同步 Pi，或当前环境无法 SSH 到 `192.168.1.118`（需说明阻塞原因）。
+
+**后端单文件示例**（替换为实际相对路径）：
+
+```powershell
+scp "server\renderers\templates\misc_gallery.py" linsen@192.168.1.118:~/workspace/MyPi/server/renderers/templates/misc_gallery.py
+ssh linsen@192.168.1.118 "sudo systemctl restart mypi.service"
+```

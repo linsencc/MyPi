@@ -1,17 +1,15 @@
+"""Shared CJK font resolution and simple line wrapping for text-based templates."""
+
 from __future__ import annotations
 
 import logging
 import os
 import subprocess
-import uuid
-from datetime import date
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from PIL import Image, ImageDraw, ImageFont
-
-from renderers.template_base import RenderContext, WallTemplate
+from PIL import ImageFont
 
 log = logging.getLogger(__name__)
 
@@ -22,24 +20,7 @@ _NOTO_SUBSET_URL = (
     "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf"
 )
 
-# 无 templateParams.text 时按「本地日期」轮换展示（每日寄语）
-_DEFAULT_MOTTOS: tuple[str, ...] = (
-    "晨光正好，今天也值得认真过。",
-    "慢慢来，把一件小事做好也很好。",
-    "心有静气，事缓则圆。",
-    "行到水穷处，坐看云起时。",
-    "苔花如米小，也学牡丹开。",
-    "风物长宜放眼量。",
-    "纸上得来终觉浅，绝知此事要躬行。",
-    "莫听穿林打叶声，何妨吟啸且徐行。",
-    "欲穷千里目，更上一层楼。",
-    "山重水复疑无路，柳暗花明又一村。",
-    "海内存知己，天涯若比邻。",
-    "人生如逆旅，我亦是行人。",
-    "竹杖芒鞋轻胜马，谁怕？一蓑烟雨任平生。",
-    "沉舟侧畔千帆过，病树前头万木春。",
-    "问渠那得清如许？为有源头活水来。",
-)
+_WRAP_FALLBACK_LINE = "晨光正好，今天也值得认真过。"
 
 _FONT_CANDIDATES: tuple[str | Path, ...] = (
     Path(r"C:\Windows\Fonts\msyh.ttc"),
@@ -55,36 +36,23 @@ _FONT_CANDIDATES: tuple[str | Path, ...] = (
 )
 
 
-def _motto_for_today() -> str:
-    i = date.today().toordinal() % len(_DEFAULT_MOTTOS)
-    return _DEFAULT_MOTTOS[i]
-
-
-def _resolve_text(template_params: dict | None) -> str:
-    raw = (template_params or {}).get("text")
-    if raw is None:
-        return _motto_for_today()
-    s = str(raw).strip()
-    return s if s else _motto_for_today()
-
-
 def _try_download_noto_subset() -> Path | None:
     if os.environ.get("MYPI_NO_FONT_FETCH", "").strip() in ("1", "true", "yes"):
         return None
     _FONT_DIR.mkdir(parents=True, exist_ok=True)
     part = _BUNDLED_OTF.with_suffix(".part")
     try:
-        log.info("daily_motto: downloading CJK font to %s", _BUNDLED_OTF)
+        log.info("cjk_font: downloading CJK font to %s", _BUNDLED_OTF)
         with urlopen(_NOTO_SUBSET_URL, timeout=120) as resp:
             data = resp.read()
         if len(data) < 500_000:
-            log.warning("daily_motto: font download too small (%s bytes), ignored", len(data))
+            log.warning("cjk_font: font download too small (%s bytes), ignored", len(data))
             return None
         part.write_bytes(data)
         part.replace(_BUNDLED_OTF)
         return _BUNDLED_OTF
     except (OSError, URLError, TimeoutError, ValueError) as e:
-        log.warning("daily_motto: font download failed: %s", e)
+        log.warning("cjk_font: font download failed: %s", e)
         try:
             if part.is_file():
                 part.unlink(missing_ok=True)
@@ -132,11 +100,6 @@ _cached_font_path: Path | None = None
 
 
 def _resolve_cjk_font_path(allow_download: bool = False) -> Path:
-    """Find (and optionally download) a CJK font, returning its *Path*.
-
-    This is intentionally separated from opening-at-a-given-size so that the
-    expensive path resolution + optional download only runs once at startup.
-    """
     global _cached_font_path
     if _cached_font_path is not None:
         return _cached_font_path
@@ -151,7 +114,7 @@ def _resolve_cjk_font_path(allow_download: bool = False) -> Path:
             if _font_renders_cjk(font, probe_size):
                 _cached_font_path = p
                 return p
-        log.warning("daily_motto: MYPI_CJK_FONT not usable: %s", custom)
+        log.warning("cjk_font: MYPI_CJK_FONT not usable: %s", custom)
 
     if _BUNDLED_OTF.is_file() and _BUNDLED_OTF.stat().st_size > 500_000:
         font = _open_font(_BUNDLED_OTF, probe_size)
@@ -191,7 +154,7 @@ def _resolve_cjk_font_path(allow_download: bool = False) -> Path:
             continue
 
     raise RuntimeError(
-        "daily_motto: no CJK-capable font found. "
+        "cjk_font: no CJK-capable font found. "
         "Install fonts (e.g. apt install fonts-noto-cjk), place NotoSansSC-Regular.otf under "
         "renderers/templates/fonts/, or set MYPI_CJK_FONT to a .ttf/.otf path."
     )
@@ -200,7 +163,7 @@ def _resolve_cjk_font_path(allow_download: bool = False) -> Path:
 def preflight_font() -> None:
     """Call at startup to eagerly resolve (and optionally download) the font."""
     _resolve_cjk_font_path(allow_download=True)
-    log.info("daily_motto: font resolved → %s", _cached_font_path)
+    log.info("cjk_font: font resolved → %s", _cached_font_path)
 
 
 def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
@@ -211,37 +174,10 @@ def _load_cjk_font(size: int) -> ImageFont.FreeTypeFont:
 def _wrap_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
     t = text.replace("\n", " ").strip()
     if not t:
-        return [_motto_for_today()]
+        return [_WRAP_FALLBACK_LINE]
     lines: list[str] = []
     i = 0
     while i < len(t) and len(lines) < max_lines:
         lines.append(t[i : i + max_chars])
         i += max_chars
     return lines
-
-
-class DailyMottoTemplate(WallTemplate):
-    display_name = "每日寄语"
-
-    def render(self, ctx: RenderContext) -> Image.Image:
-        text = _resolve_text(ctx.scene.template_params)
-        w = ctx.device_profile.get("width", 800)
-        h = ctx.device_profile.get("height", 600)
-        img = Image.new("RGB", (w, h), color=(248, 246, 240))
-        draw = ImageDraw.Draw(img)
-        scale = min(w, h) / 600
-        size_px = max(24, int(34 * scale))
-        font = _load_cjk_font(size_px)
-        max_chars = max(6, int(w / (size_px * 1.1)))
-        lines = _wrap_lines(text, max_chars=max_chars, max_lines=8)
-        line_h = int(size_px * 1.38)
-        fill = (35, 38, 42)
-        block_h = len(lines) * line_h
-        y0 = max(40, (h - block_h) // 2)
-        margin = max(24, int(w * 0.04))
-        for k, line in enumerate(lines):
-            bbox = draw.textbbox((0, 0), line, font=font)
-            tw = bbox[2] - bbox[0]
-            x = max(margin, (w - tw) // 2)
-            draw.text((x, y0 + k * line_h), line[:220], fill=fill, font=font)
-        return img

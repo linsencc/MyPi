@@ -32,7 +32,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFilter
 
 from renderers.template_base import RenderContext, WallTemplate
-from renderers.templates.daily_motto import _load_cjk_font, _wrap_lines
+from renderers.templates.cjk_font import _load_cjk_font, _wrap_lines
 
 log = logging.getLogger(__name__)
 
