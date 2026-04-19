@@ -14,6 +14,7 @@ Environment variables:
   CIVITAI_TOKEN         – Civitai API token for image generation
   MYPI_CIVITAI_MODEL    – Civitai model URN (default: DreamShaper XL Lightning)
   MYPI_CIVITAI_TIMEOUT  – Civitai poll timeout seconds (default: 90)
+  MYPI_CIVITAI_NO_PROXY – if 1/true: call Civitai without HTTP(S) proxy (LLM may still use proxy)
 """
 from __future__ import annotations
 
@@ -70,6 +71,37 @@ _DEFAULT_CIVITAI_MODEL = "urn:air:sdxl:checkpoint:civitai:112902@354657"
 _CIVITAI_POLL_INTERVAL = 4
 _CIVITAI_TIMEOUT = 90
 
+# Match civitai-javascript OpenAPI client (request.ts): Accept application/json;
+# errors may be application/problem+json (RFC 7807) with a "detail" field.
+_CIVITAI_JSON_HEADERS = {
+    "Accept": "application/json",
+}
+
+
+def _civitai_http_error_log(exc: urllib.error.HTTPError, what: str) -> None:
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", errors="replace")[:1200]
+    except Exception:
+        pass
+    hdrs = getattr(exc, "headers", None)
+    safe: dict[str, str] = {}
+    if hdrs is not None:
+        for key in ("Content-Type", "Content-Length", "CF-Ray", "X-Request-Id", "Server", "Date"):
+            v = hdrs.get(key)
+            if v:
+                safe[key] = v
+    log.warning(
+        "ai_motto: Civitai %s HTTP %s reason=%r headers=%s body_len=%s body_prefix=%r",
+        what,
+        exc.code,
+        exc.reason,
+        safe,
+        (hdrs.get("Content-Length") or "-") if hdrs else "-",
+        body[:500] if body else "",
+    )
+
+
 # ── Fallbacks ───────────────────────────────────────────────────────
 _FALLBACK_MESSAGES = (
     "你已经走了很远，别忘了今天也值得好好过。",
@@ -108,12 +140,54 @@ def _build_opener(need_proxy: bool = True) -> urllib.request.OpenerDirector:
     return urllib.request.build_opener()
 
 
+def _civitai_opener() -> urllib.request.OpenerDirector:
+    """Civitai may need a direct route while the LLM still uses MYPI_LLM_PROXY."""
+    v = os.environ.get("MYPI_CIVITAI_NO_PROXY", "").strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return urllib.request.build_opener()
+    return _build_opener()
+
+
+def _parse_llm_json_blob(raw: str) -> dict | None:
+    """Parse JSON object from model output; tolerate fences and leading/trailing text."""
+    cleaned = _re.sub(r"```json\s*|\s*```", "", raw).strip()
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(cleaned):
+        if ch != "{":
+            continue
+        try:
+            obj, _end = dec.raw_decode(cleaned, i)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and any(
+            k in obj for k in ("motto", "image_prompt", "imagePrompt")
+        ):
+            return obj
+    return None
+
+
+def _image_prompt_from_data(data: dict) -> str | None:
+    v = data.get("image_prompt")
+    if v is None or (isinstance(v, str) and not v.strip()):
+        v = data.get("imagePrompt")
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
 # ── LLM call ────────────────────────────────────────────────────────
 
 def _call_llm() -> tuple[str, str | None]:
     """Returns (motto, image_prompt). image_prompt may be None."""
     api_key = os.environ.get("MYPI_LLM_API_KEY", "").strip()
     if not api_key:
+        log.info("ai_motto: MYPI_LLM_API_KEY not set, motto fallback and no image")
         return _get_fallback(), None
 
     base_url = os.environ.get("MYPI_LLM_BASE_URL", _DEFAULT_BASE_URL).rstrip("/")
@@ -143,22 +217,29 @@ def _call_llm() -> tuple[str, str | None]:
     )
 
     opener = _build_opener()
+    raw = ""
     try:
         with opener.open(req, timeout=timeout) as resp:
             body = json.loads(resp.read())
         raw = (body["choices"][0]["message"].get("content") or "").strip()
         log.info("ai_motto: LLM raw %d chars", len(raw))
 
-        # Try JSON parse
-        cleaned = _re.sub(r"```json\s*|\s*```", "", raw).strip()
-        data = json.loads(cleaned)
-        motto = data.get("motto", "").strip()
-        image_prompt = data.get("image_prompt", "").strip() or None
+        data = _parse_llm_json_blob(raw)
+        if not data:
+            log.warning("ai_motto: LLM response is not valid JSON, no image_prompt")
+            text = _strip_thinking(raw)
+            return text or _get_fallback(), None
+
+        motto = (data.get("motto") or "").strip()
+        image_prompt = _image_prompt_from_data(data)
         if not motto:
             motto = _strip_thinking(raw) or _get_fallback()
+        if motto and not image_prompt:
+            log.info("ai_motto: LLM returned motto but empty image_prompt; text-only layout")
         return motto, image_prompt
-    except (json.JSONDecodeError, KeyError):
-        text = _strip_thinking(raw) if 'raw' in dir() else None
+    except KeyError:
+        text = _strip_thinking(raw) if raw else None
+        log.warning("ai_motto: LLM response missing expected fields")
         return text or _get_fallback(), None
     except Exception as exc:
         log.warning("ai_motto: LLM call failed: %s", exc)
@@ -170,21 +251,23 @@ def _call_llm() -> tuple[str, str | None]:
 def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image | None:
     token = os.environ.get("CIVITAI_TOKEN", "").strip()
     if not token:
-        log.debug("ai_motto: CIVITAI_TOKEN not set, skipping image gen")
+        log.warning(
+            "ai_motto: CIVITAI_TOKEN not set; skipping Civitai image (set token on the Pi service env)"
+        )
         return None
 
     model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
     poll_timeout = int(os.environ.get("MYPI_CIVITAI_TIMEOUT", str(_CIVITAI_TIMEOUT)))
 
     is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
+    # Match Civitai JS SDK defaults (low steps/cfg for SDXL has caused HTTP 500 on orchestration).
     if is_sdxl:
         full_prompt = f"{prompt}, masterpiece, best quality, highly detailed, no text, no watermark, no frame"
         neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres, ugly, disfigured:1.4)"
-        steps, cfg = 6, 2
     else:
         full_prompt = f"{prompt}, masterpiece, best quality, no text, no watermark"
         neg_prompt = "(text, watermark, signature, frame, border, picture frame, deformed, blurry, lowres:1.4)"
-        steps, cfg = 20, 7
+    steps, cfg, clip_skip = 20, 7, 2
 
     job_payload = json.dumps({
         "$type": "textToImage",
@@ -197,11 +280,11 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
             "cfgScale": cfg,
             "width": width,
             "height": height,
-            "clipSkip": 2,
+            "clipSkip": clip_skip,
         },
     }).encode()
 
-    opener = _build_opener()
+    opener = _civitai_opener()
 
     # Submit job
     _UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
@@ -210,6 +293,7 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
         f"{_CIVITAI_API}/v1/consumer/jobs",
         data=job_payload,
         headers={
+            **_CIVITAI_JSON_HEADERS,
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
             "User-Agent": _UA,
@@ -224,6 +308,9 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
             log.warning("ai_motto: Civitai submit returned no token: %s", submit)
             return None
         log.info("ai_motto: Civitai job submitted, token=%s", job_token[:20])
+    except urllib.error.HTTPError as exc:
+        _civitai_http_error_log(exc, "submit")
+        return None
     except Exception as exc:
         log.warning("ai_motto: Civitai submit failed: %s", exc)
         return None
@@ -235,7 +322,11 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
         time.sleep(_CIVITAI_POLL_INTERVAL)
         poll_req = urllib.request.Request(
             f"{_CIVITAI_API}/v1/consumer/jobs?token={job_token}&wait=true",
-            headers={"Authorization": f"Bearer {token}", "User-Agent": _UA},
+            headers={
+                **_CIVITAI_JSON_HEADERS,
+                "Authorization": f"Bearer {token}",
+                "User-Agent": _UA,
+            },
             method="GET",
         )
         try:
@@ -259,6 +350,8 @@ def _generate_civitai_image(prompt: str, width: int, height: int) -> Image.Image
             if job.get("scheduled") is False and not result:
                 log.warning("ai_motto: Civitai job finished with no result")
                 return None
+        except urllib.error.HTTPError as exc:
+            _civitai_http_error_log(exc, "poll")
         except Exception as exc:
             log.warning("ai_motto: Civitai poll error: %s", exc)
 
@@ -286,6 +379,21 @@ _SECONDARY_COLOR = (110, 105, 98)
 _SUBTLE_COLOR = (150, 145, 138)
 _ACCENT_COLOR = (85, 80, 72)
 _DIVIDER_COLOR = (200, 196, 188)
+
+
+def _infer_gen_size(canvas_w: int, canvas_h: int, *, is_sdxl: bool) -> tuple[int, int]:
+    """Size for Civitai: match frame aspect, cap long side (1024 SDXL / 512 SD1.5), multiples of 64."""
+    max_side = 1024 if is_sdxl else 512
+    cw, ch = max(1, canvas_w), max(1, canvas_h)
+    if cw >= ch:
+        gen_w = min(cw, max_side)
+        gen_h = int(gen_w * ch / cw)
+    else:
+        gen_h = min(ch, max_side)
+        gen_w = int(gen_h * cw / ch)
+    gen_w = max(256, (gen_w // 64) * 64)
+    gen_h = max(256, (gen_h // 64) * 64)
+    return gen_w, gen_h
 
 
 def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
@@ -475,9 +583,11 @@ class AiMottoTemplate(WallTemplate):
         w = ctx.device_profile.get("width", 800)
         h = ctx.device_profile.get("height", 600)
 
-        # Override text from params
-        override_text = params.get("text", "").strip()
+        # Override text from params (only non-empty string skips LLM + image)
+        raw_ov = params.get("text")
+        override_text = raw_ov.strip() if isinstance(raw_ov, str) else ""
         if override_text:
+            log.info("ai_motto: templateParams.text set; using fixed motto, no LLM/Civitai image")
             motto, image_prompt = override_text, None
         else:
             motto, image_prompt = _call_llm()
@@ -486,11 +596,7 @@ class AiMottoTemplate(WallTemplate):
         if image_prompt:
             model_urn = os.environ.get("MYPI_CIVITAI_MODEL", _DEFAULT_CIVITAI_MODEL).strip()
             is_sdxl = ":sdxl:" in model_urn or ":sdxl1:" in model_urn
-            base = 1024 if is_sdxl else 512
-            gen_w = min(base, w)
-            gen_w = max(256, (gen_w // 64) * 64)
-            gen_h = int(gen_w * (h / w))
-            gen_h = max(256, (gen_h // 64) * 64)
+            gen_w, gen_h = _infer_gen_size(w, h, is_sdxl=is_sdxl)
             art = _generate_civitai_image(image_prompt, gen_w, gen_h)
 
         return _compose(motto, art, w, h)
