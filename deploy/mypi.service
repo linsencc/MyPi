@@ -16,6 +16,11 @@ Environment=MYPI_BIND=0.0.0.0
 Environment=PORT=5050
 Environment=MYPI_SKIP_PORT_CHECK=1
 
+# Optional: MYPI_LLM_API_KEY, MYPI_LLM_BASE_URL, MYPI_PINTEREST_ACCESS_TOKEN, etc. (not committed)
+# Pi 上常见为仓库根目录 secrets.env；deploy/mypi-secrets.env 可覆盖同名变量（后者优先）
+EnvironmentFile=-/home/linsen/workspace/MyPi/secrets.env
+EnvironmentFile=-/home/linsen/workspace/MyPi/deploy/mypi-secrets.env
+
 Environment=MYPI_EPD_SDK=/home/linsen/workspace/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib
 
 ExecStart=/home/linsen/workspace/MyPi/.venv/bin/gunicorn \
@@ -23,7 +28,7 @@ ExecStart=/home/linsen/workspace/MyPi/.venv/bin/gunicorn \
     --workers 1 \
     --worker-class gthread \
     --threads 4 \
-    --timeout 120 \
+    --timeout 150 \
     --access-logfile - \
     wsgi:application
 

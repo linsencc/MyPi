@@ -21,6 +21,8 @@ __pycache__/
 # Local env & secrets
 .env
 .env.*
+secrets.env
+deploy/mypi-secrets.env
 !.env.example
 
 # OS / editor

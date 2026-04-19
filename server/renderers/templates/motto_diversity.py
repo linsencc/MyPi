@@ -31,7 +31,10 @@ class MottoStratum:
 
 
 # 每次随机一层：影视类按地域/载体拆开，避免落到「英语大片励志台词」这一统计默认。
-_MOTTO_FORMAT_HINT = " 输出句式严格为 「正文摘录」 -- 出处（出处：影视写《片名》，其它写作者/书名/人名）。"
+_MOTTO_FORMAT_HINT = (
+    " 输出句式严格为 「正文摘录」 -- 出处（出处：影视写《片名》，其它写作者/书名/人名）；"
+    "正文宜短、洗练，整段含符号不超过 34 字。"
+)
 MOTTO_STRATA: tuple[MottoStratum, ...] = (
     MottoStratum(
         "zh_lit",

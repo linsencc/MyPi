@@ -9,9 +9,9 @@ Each render:
   3. Composes a full-bleed image with text overlay (portrait-friendly, image is cropped to the frame)
 
 Environment variables:
-  MYPI_LLM_API_KEY             – OpenAI-compatible API key
-  MYPI_LLM_BASE_URL            – API base URL (default: https://api.openai.com/v1)
-  MYPI_LLM_MODEL               – Model name (default: deepseek/deepseek-chat-v3.1)
+  MYPI_LLM_API_KEY             – OpenAI-compatible API key (e.g. OpenRouter)
+  MYPI_LLM_BASE_URL            – API base URL (default: https://openrouter.ai/api/v1)
+  MYPI_LLM_MODEL               – Model id (default: deepseek/deepseek-chat on OpenRouter)
   MYPI_LLM_TIMEOUT             – LLM timeout seconds (default: 20)
   MYPI_LLM_PROXY               – HTTP(S) proxy for LLM calls
   MYPI_PINTEREST_ACCESS_TOKEN  – Pinterest API OAuth access token (or PINTEREST_ACCESS_TOKEN)
@@ -26,11 +26,11 @@ Environment variables:
   MYPI_MOTTO_FONT              – Optional path to .ttf/.otf/.ttc for the quote (literary title font).
   MYPI_MOTTO_FONT_BOLD         – Optional path to a bolder face for the quote; if unset, stroke is used on MYPI_MOTTO_FONT or default CJK.
   MYPI_MOTTO_IMAGE_NO_PROXY      – if 1/true: Pinterest/image HTTP without proxy (LLM may still use proxy)
+  MYPI_MOTTO_OFFLINE_IMAGE       – Optional path to a JPEG/PNG used when remote image fetch fails (after image_prompt).
 """
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import logging
 import os
@@ -44,10 +44,18 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps, ImageStat
 
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.cjk_font import _load_cjk_font, _wrap_lines
+from renderers.templates.cn_date import cn_date_str
+from renderers.templates.photo_scrim import (
+    download_image_url,
+    fit_image_cover,
+    infer_fetch_size,
+    overlay_bottom_scrim,
+    to_full_color_rgb,
+)
 from renderers.templates.motto_diversity import (
     RETRY_DIVERSIFY_SUFFIX,
     append_motto_to_recent,
@@ -60,8 +68,9 @@ from renderers.templates.motto_diversity import (
 log = logging.getLogger(__name__)
 
 # ── LLM config ──────────────────────────────────────────────────────
-_DEFAULT_BASE_URL = "https://api.openai.com/v1"
-_DEFAULT_MODEL = "deepseek/deepseek-chat-v3.1"
+# Defaults target OpenRouter (OpenAI-compatible). Base URL and model id must match the key provider.
+_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+_DEFAULT_MODEL = "deepseek/deepseek-chat"
 _DEFAULT_TIMEOUT = 20
 
 _SYSTEM_PROMPT = textwrap.dedent("""\
@@ -83,7 +92,8 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
       · 选题**只能**落在该维度内（例如指定「仅华语影视」时，不得输出欧美片；指定「仅诗词」时不得输出影视）。
       · 寄语须**明显区别于**「近期去重」列表，勿逐字复述或仅改一两字。
       · 勿依赖模型训练数据里最常出现的少数「全球通用品」；宁可选略冷门但贴切的作品。
-      整段 motto（含「」、`--` 与出处）**40 字以内**，不打招呼、不写日期。
+      · **文风简约**：正文宜短、洗练，避免堆砌修辞与长从句，像书签摘句而非散文段。
+      整段 motto（含「」、`--` 与出处）**34 字以内**，不打招呼、不写日期。
     - image_prompt: 英文关键词串，用于找**全彩桌面风景壁纸插画**（竖屏满幅背景 + 底部叠字），与寄语意境相合。
       审美对齐 Pinterest 上 **desktop wallpaper art / anime scenery wallpaper** 类画板（如偏插画、水彩、日系动画背景感、治愈系远景）：
       * **优先**：手绘/数字**插画绘景**、**watercolor**、**anime landscape illustration**、**aesthetic desktop background**、
@@ -96,8 +106,8 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
 """)
 
 _USER_PROMPT = (
-    "请给我今天的一句寄语（motto 必须严格为 `「正文」 -- 出处` 格式），以及相配的英文 image_prompt：要便于检索 "
-    "**desktop wallpaper art / anime scenery wallpaper** 那种插画感、水彩感、治愈系远景（与 Pinterest 上 scenery 壁纸画板同类）。"
+    "请给我今天一句**简短洗练**的寄语（motto 严格为 `「正文」 -- 出处`，正文尽量短），"
+    "以及相配的英文 image_prompt：便于检索 **desktop wallpaper art / anime scenery wallpaper** 类插画远景。"
 )
 
 # ── Fallbacks ───────────────────────────────────────────────────────
@@ -219,6 +229,36 @@ def _image_prompt_from_data(data: dict) -> str | None:
     return s or None
 
 
+def _assistant_content_from_completion(body: object) -> str:
+    """OpenAI-style chat completion message content (string or multimodal list)."""
+    if not isinstance(body, dict):
+        return ""
+    try:
+        choices = body["choices"]
+        msg = choices[0]["message"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    if not isinstance(msg, dict):
+        return ""
+    c = msg.get("content")
+    if isinstance(c, str):
+        return c.strip()
+    if isinstance(c, list):
+        parts: list[str] = []
+        for item in c:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    t = item.get("text")
+                    if isinstance(t, str):
+                        parts.append(t)
+                elif isinstance(item.get("text"), str):
+                    parts.append(str(item["text"]))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "".join(parts).strip()
+    return ""
+
+
 # ── LLM call ────────────────────────────────────────────────────────
 
 def _call_llm() -> tuple[str, str | None]:
@@ -271,12 +311,25 @@ def _call_llm() -> tuple[str, str | None]:
         try:
             with opener.open(req, timeout=timeout) as resp:
                 body = json.loads(resp.read())
-            raw = (body["choices"][0]["message"].get("content") or "").strip()
+            raw = _assistant_content_from_completion(body)
+            if not raw:
+                log.warning(
+                    "ai_motto: LLM empty assistant content (attempt %s)",
+                    attempt + 1,
+                )
+                if attempt < 2:
+                    continue
+                return _get_fallback(), None
             log.info("ai_motto: LLM attempt %s raw %d chars", attempt + 1, len(raw))
 
             data = _parse_llm_json_blob(raw)
             if not data:
-                log.warning("ai_motto: LLM response is not valid JSON, no image_prompt")
+                log.warning(
+                    "ai_motto: LLM response is not valid JSON (attempt %s)",
+                    attempt + 1,
+                )
+                if attempt < 2:
+                    continue
                 text = _strip_thinking(raw)
                 return text or _get_fallback(), None
 
@@ -300,12 +353,31 @@ def _call_llm() -> tuple[str, str | None]:
             log.warning("ai_motto: still similar after retries; using last motto")
             append_motto_to_recent(motto)
             return motto, image_prompt
-        except KeyError:
-            text = _strip_thinking(raw) if raw else None
-            log.warning("ai_motto: LLM response missing expected fields")
-            return text or _get_fallback(), None
+        except urllib.error.HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="replace")[:600]
+            except Exception:
+                pass
+            log.warning(
+                "ai_motto: LLM HTTP %s body_prefix=%r",
+                exc.code,
+                err_body[:400],
+            )
+            if attempt < 2 and exc.code in (408, 425, 429, 500, 502, 503, 504):
+                time.sleep(0.8 * (attempt + 1))
+                continue
+            return _get_fallback(), None
+        except json.JSONDecodeError as exc:
+            log.warning("ai_motto: LLM response not JSON (attempt %s): %s", attempt + 1, exc)
+            if attempt < 2:
+                continue
+            return _get_fallback(), None
         except Exception as exc:
-            log.warning("ai_motto: LLM call failed: %s", exc)
+            log.warning("ai_motto: LLM call failed (attempt %s): %s", attempt + 1, exc)
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
             return _get_fallback(), None
 
     return motto or _get_fallback(), image_prompt
@@ -578,19 +650,6 @@ def _rgb_looks_grayscale_photo(img: Image.Image) -> bool:
     return spread < 6.0
 
 
-def _to_full_color_rgb(img: Image.Image) -> Image.Image:
-    """Full RGB for color e-ink; default slight Color boost for washed panels."""
-    rgb = img.convert("RGB")
-    raw = os.environ.get("MYPI_MOTTO_COLOR_BOOST", "1.15").strip()
-    try:
-        factor = float(raw)
-    except ValueError:
-        factor = 1.15
-    if factor > 1.01 and factor <= 2.0:
-        rgb = ImageEnhance.Color(rgb).enhance(factor)
-    return rgb
-
-
 def _beautify_landscape_art(img: Image.Image) -> Image.Image:
     """Mild contrast + saturation so wallpapers read richer on e-ink (cheap on Pi)."""
     v = os.environ.get("MYPI_MOTTO_BEAUTIFY", "1").strip().lower()
@@ -600,20 +659,6 @@ def _beautify_landscape_art(img: Image.Image) -> Image.Image:
     rgb = ImageEnhance.Contrast(rgb).enhance(1.06)
     rgb = ImageEnhance.Color(rgb).enhance(1.05)
     return rgb
-
-
-def _download_image_url(url: str, opener: urllib.request.OpenerDirector, timeout: int = 45) -> Image.Image | None:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            img_data = resp.read()
-        im = Image.open(io.BytesIO(img_data))
-        if im.mode not in ("RGB", "RGBA"):
-            im = im.convert("RGBA") if "A" in im.mode else im.convert("RGB")
-        return _to_full_color_rgb(im.convert("RGB"))
-    except Exception as exc:
-        log.warning("ai_motto: image download failed url=%s err=%s", url[:120], exc)
-        return None
 
 
 def _fetch_pinterest_motto_image(
@@ -648,7 +693,7 @@ def _fetch_pinterest_motto_image(
         if not url:
             continue
         log.info("ai_motto: Pinterest image candidate pin=%s", str(pin.get("id", ""))[:20])
-        img = _download_image_url(url, opener)
+        img = download_image_url(url, opener, log_prefix="ai_motto")
         if img is None:
             continue
         if _rgb_looks_grayscale_photo(img):
@@ -668,7 +713,7 @@ def _fetch_loremflickr_fallback(image_prompt: str, width: int, height: int, mott
     for attempt in range(12):
         bust = time.time_ns() ^ attempt
         lf_url = f"https://loremflickr.com/g/{width}/{height}/{path}?random={bust}"
-        img = _download_image_url(lf_url, opener)
+        img = download_image_url(lf_url, opener, log_prefix="ai_motto")
         if img is None:
             continue
         if _rgb_looks_grayscale_photo(img):
@@ -679,7 +724,7 @@ def _fetch_loremflickr_fallback(image_prompt: str, width: int, height: int, mott
     for attempt in range(24):
         seed = _picsum_seed_per_render(f"{motto}:{attempt}:{time.time_ns()}", tags)
         url = f"https://picsum.photos/seed/{urllib.parse.quote(seed, safe='')}/{width}/{height}"
-        img = _download_image_url(url, opener)
+        img = download_image_url(url, opener, log_prefix="ai_motto")
         if img is None:
             continue
         if _rgb_looks_grayscale_photo(img):
@@ -698,6 +743,22 @@ def _fetch_web_motto_image(image_prompt: str, width: int, height: int, motto: st
     return _fetch_loremflickr_fallback(image_prompt, width, height, motto)
 
 
+def _offline_motto_art(gen_w: int, gen_h: int) -> Image.Image:
+    """When remote hosts are unreachable, still show a full-bleed background (no network)."""
+    raw = os.environ.get("MYPI_MOTTO_OFFLINE_IMAGE", "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_file():
+            try:
+                with Image.open(p) as im:
+                    return to_full_color_rgb(im.convert("RGB"))
+            except OSError as exc:
+                log.warning("ai_motto: MYPI_MOTTO_OFFLINE_IMAGE unreadable: %s", exc)
+    gw, gh = max(1, gen_w), max(1, gen_h)
+    grad = Image.linear_gradient("L").transpose(Image.ROTATE_90).resize((gw, gh))
+    return ImageOps.colorize(grad, (28, 36, 52), (232, 218, 200)).convert("RGB")
+
+
 # ── Composition ─────────────────────────────────────────────────────
 
 _BG_COLOR = (250, 248, 243)
@@ -705,98 +766,12 @@ _TEXT_COLOR = (30, 32, 36)
 _SECONDARY_COLOR = (110, 105, 98)
 _SUBTLE_COLOR = (150, 145, 138)
 _ACCENT_COLOR = (85, 80, 72)
-_DIVIDER_COLOR = (200, 196, 188)
 # Full-bleed: **dark bottom scrim** (not pale wash) so light text + dark stroke stay readable.
 _SCRIM_RGB = (22, 26, 36)
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
 _FOOTER_ON_SCRIM_A = (188, 182, 170)
 _FOOTER_ON_SCRIM_B = (138, 132, 122)
-
-
-def _infer_fetch_size(canvas_w: int, canvas_h: int) -> tuple[int, int]:
-    """Pixel size for non-Pinterest fallbacks: same aspect as the frame, long edge capped."""
-    max_side = int(os.environ.get("MYPI_MOTTO_FETCH_MAX_SIDE", "2400"))
-    max_side = max(400, min(max_side, 8192))
-    cw, ch = max(1, canvas_w), max(1, canvas_h)
-    if max(cw, ch) <= max_side:
-        return cw, ch
-    if cw >= ch:
-        gen_w = max_side
-        gen_h = max(1, int(round(gen_w * ch / cw)))
-    else:
-        gen_h = max_side
-        gen_w = max(1, int(round(gen_h * cw / ch)))
-    return max(400, gen_w), max(400, gen_h)
-
-
-def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    """Center-crop & resize to fill target area exactly."""
-    src_ratio = src.width / src.height
-    tgt_ratio = target_w / target_h
-    if src_ratio > tgt_ratio:
-        new_h = src.height
-        new_w = int(new_h * tgt_ratio)
-    else:
-        new_w = src.width
-        new_h = int(new_w / tgt_ratio)
-    left = (src.width - new_w) // 2
-    top = (src.height - new_h) // 2
-    cropped = src.crop((left, top, left + new_w, top + new_h))
-    return cropped.resize((target_w, target_h), Image.LANCZOS)
-
-
-def _overlay_bottom_scrim(canvas: Image.Image, y_start: int, fade_h: int) -> None:
-    """Dark blue-gray scrim from y_start to bottom — text reads as light-on-dusk, not white-on-cream."""
-    raw = os.environ.get("MYPI_MOTTO_SCRIM_MAX", "0.76").strip()
-    try:
-        max_opacity = float(raw)
-    except ValueError:
-        max_opacity = 0.76
-    max_opacity = max(0.38, min(0.92, max_opacity))
-    w = canvas.width
-    strip = Image.new("RGB", (w, fade_h), _SCRIM_RGB)
-    mask = Image.new("L", (w, fade_h))
-    draw_mask = ImageDraw.Draw(mask)
-    for y in range(fade_h):
-        t = y / fade_h
-        alpha = int(255 * max_opacity * (t ** 1.38))
-        draw_mask.line([(0, y), (w - 1, y)], fill=alpha)
-    canvas.paste(strip, (0, y_start), mask=mask)
-
-
-def _cn_date_str() -> str:
-    """Today's date in Chinese, e.g. '四月十九日'."""
-    now = datetime.now()
-    ms = ["一", "二", "三", "四", "五", "六",
-          "七", "八", "九", "十", "十一", "十二"]
-    ds = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
-    d = now.day
-    if d <= 10:
-        day = "十" if d == 10 else ds[d]
-    elif d < 20:
-        day = "十" + ds[d - 10]
-    elif d == 20:
-        day = "二十"
-    elif d < 30:
-        day = "二十" + ds[d - 20]
-    elif d == 30:
-        day = "三十"
-    else:
-        day = "三十一"
-    return f"{ms[now.month - 1]}月{day}日"
-
-
-def _draw_ornament(draw: ImageDraw.ImageDraw, cx: int, cy: int, scale: float) -> None:
-    """Draw a ── ◇ ── ornamental divider."""
-    half_w = int(26 * scale)
-    gap = int(5 * scale)
-    d = max(2, int(2.5 * scale))
-    draw.line([(cx - half_w - gap, cy), (cx - gap - 1, cy)], fill=_DIVIDER_COLOR, width=1)
-    draw.line([(cx + gap + 1, cy), (cx + half_w + gap, cy)], fill=_DIVIDER_COLOR, width=1)
-    draw.polygon([
-        (cx, cy - d), (cx + d, cy), (cx, cy + d), (cx - d, cy),
-    ], fill=_ACCENT_COLOR)
 
 
 def _compose(
@@ -813,17 +788,17 @@ def _compose(
 
     if art:
         # ── Full-bleed image + gradient overlay ──────────────
-        fitted = _fit_image(art, canvas_w, canvas_h)
+        fitted = fit_image_cover(art, canvas_w, canvas_h)
         fitted = _beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
         scrim_start = int(canvas_h * 0.38)
-        _overlay_bottom_scrim(img, scrim_start, canvas_h - scrim_start)
+        overlay_bottom_scrim(img, scrim_start, canvas_h - scrim_start)
         draw = ImageDraw.Draw(img)
 
         # Text sits in the lower third over the scrim (light fill + dark stroke)
         text_zone_center = int(canvas_h * 0.74)
-        size_px = max(26, int(36 * scale))
+        size_px = max(22, int(31 * scale))
         font, quote_bold = _load_motto_quote_font(size_px)
         raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.05)))
         n = len(motto)
@@ -834,11 +809,11 @@ def _compose(
         else:
             max_chars = raw_max
         lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
-        line_h = int(size_px * 1.52)
+        line_h = int(size_px * 1.44)
         block_h = len(lines) * line_h
         y0 = text_zone_center - block_h // 2
 
-        stroke_w = max(2, int(2.2 * scale)) if not quote_bold else max(2, int(1.85 * scale))
+        stroke_w = max(1, int(1.75 * scale)) if not quote_bold else max(1, int(1.55 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
@@ -854,9 +829,9 @@ def _compose(
             )
 
         # Footer: date + attribution
-        footer_y = canvas_h - int(28 * scale)
-        small = _load_cjk_font(max(11, int(13 * scale)))
-        date_str = _cn_date_str()
+        footer_y = canvas_h - int(26 * scale)
+        small = _load_cjk_font(max(10, int(12 * scale)))
+        date_str = cn_date_str()
         attr_str = "— 每日寄语"
         spacer = int(20 * scale)
         db = draw.textbbox((0, 0), date_str, font=small)
@@ -869,41 +844,38 @@ def _compose(
 
     else:
         # ── Text only (no image) ─────────────────────────────
-        bar_w = int(40 * scale)
-        bar_h = max(2, int(3 * scale))
+        bar_w = int(32 * scale)
+        bar_h = max(1, int(2 * scale))
         bar_y = int(canvas_h * 0.32)
         draw.rectangle(
             [(cx - bar_w // 2, bar_y), (cx + bar_w // 2, bar_y + bar_h)],
             fill=_ACCENT_COLOR,
         )
 
-        size_px = max(30, int(42 * scale))
+        size_px = max(26, int(35 * scale))
         font, quote_bold = _load_motto_quote_font(size_px)
         max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.05)))
         lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
-        line_h = int(size_px * 1.58)
+        line_h = int(size_px * 1.48)
         block_h = len(lines) * line_h
-        y0 = bar_y + bar_h + int(24 * scale)
+        y0 = bar_y + bar_h + int(20 * scale)
 
-        tw_off = max(1, int(1.2 * scale))
+        tw_off = max(1, int(1.0 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
             tx = (canvas_w - tw) // 2
             ty = y0 + k * line_h
             if quote_bold:
-                draw.text((tx + tw_off, ty + tw_off), ln, fill=(220, 218, 214), font=font)
+                draw.text((tx + tw_off, ty + tw_off), ln, fill=(228, 226, 222), font=font)
                 draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
             else:
                 draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
 
         text_bottom = y0 + block_h
-        div_y = text_bottom + int(22 * scale)
-        _draw_ornament(draw, cx, div_y, scale)
-
-        footer_y = div_y + int(18 * scale)
-        small = _load_cjk_font(max(11, int(14 * scale)))
-        date_str = _cn_date_str()
+        footer_y = text_bottom + int(20 * scale)
+        small = _load_cjk_font(max(10, int(12 * scale)))
+        date_str = cn_date_str()
         attr_str = "— 每日寄语"
         spacer = int(20 * scale)
         db = draw.textbbox((0, 0), date_str, font=small)
@@ -937,8 +909,14 @@ class AiMottoTemplate(WallTemplate):
             motto, image_prompt = _call_llm()
 
         art = None
+        gen_w, gen_h = infer_fetch_size(w, h)
         if image_prompt:
-            gen_w, gen_h = _infer_fetch_size(w, h)
             art = _fetch_web_motto_image(image_prompt, gen_w, gen_h, motto)
+            if art is None:
+                log.info("ai_motto: remote image unavailable; using offline wallpaper")
+                art = _offline_motto_art(gen_w, gen_h)
+        elif not override_text:
+            # No image_prompt (e.g. LLM key unset): still full-bleed background so the card is not plain text-only.
+            art = _offline_motto_art(gen_w, gen_h)
 
         return _compose(motto, art, w, h)
