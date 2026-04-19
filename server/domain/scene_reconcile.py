@@ -63,6 +63,7 @@ def reconcile_scenes_with_templates(cfg: AppConfig, registry: TemplateRegistry) 
         scenes=new_scenes,
         frame_tuning=cfg.frame_tuning,
         device_profile=cfg.device_profile,
+        quiet_hours=cfg.quiet_hours,
     )
     if out.model_dump() == cfg.model_dump():
         return cfg, False

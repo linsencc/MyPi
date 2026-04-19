@@ -294,18 +294,19 @@ export function useWallSession() {
   }, [])
 
   const commitFrameDialog = useCallback(
-    async (nextFrame: FrameDisplayConfig) => {
+    async (nextFrame: FrameDisplayConfig, quietHours: AppConfig["quietHours"]) => {
       if (!config) return
       try {
         const nextTuning = frameConfigToTuning(nextFrame)
         const nextCfg: AppConfig = {
           ...config,
           frameTuning: nextTuning,
+          quietHours,
         }
         const saved = await putConfig(nextCfg)
         setConfig(saved)
         setFrameDialogOpen(false)
-        showToast("画框设置已保存")
+        showToast("设置已保存")
         await refresh()
       } catch (e) {
         const msg = e instanceof ApiError ? e.message : "保存失败"

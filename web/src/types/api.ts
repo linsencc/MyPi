@@ -2,6 +2,13 @@ export type SceneSchedule =
   | { type: "interval"; intervalSeconds: number }
   | { type: "cron_weekly"; time: string; weekdays: number[] }
 
+/** 自动刷新勿扰时段（设备本地时间，与 MYPI_TZ 一致）；手动「立即上屏」不受限 */
+export interface QuietHours {
+  enabled: boolean
+  startLocal: string
+  endLocal: string
+}
+
 export interface Scene {
   id: string
   name: string
@@ -18,6 +25,7 @@ export interface AppConfig {
   scenes: Scene[]
   frameTuning: Record<string, unknown>
   deviceProfile: Record<string, unknown>
+  quietHours: QuietHours
 }
 
 export interface TemplateMeta {

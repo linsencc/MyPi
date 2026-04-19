@@ -48,12 +48,17 @@ export function ScheduleTimePicker({
   value,
   onChange,
   className,
+  wrapperClassName,
   id,
+  disabled,
 }: {
   value: string
   onChange: (next: string) => void
   className?: string
+  /** 外层容器，默认 w-fit；需铺满父级时传如 `w-full min-w-0` */
+  wrapperClassName?: string
   id?: string
+  disabled?: boolean
 }) {
   const toDisplay = (v: string) => {
     const { h, m, s } = parseHm(v)
@@ -79,42 +84,52 @@ export function ScheduleTimePicker({
 
   const hintText = "24 小时制。可输入 06:30:00 或 063000，精确到秒。"
 
+  const trigger = (
+    <div
+      className={cn(
+        "flex h-10 w-fit min-w-[7.5rem] max-w-[11rem] shrink-0 items-center gap-2 rounded-[length:var(--radius-md)] border px-2.5 transition-[border-color,background-color,box-shadow] focus-within:border-[#0071e3]/45 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0071e3]/12",
+        disabled
+          ? "cursor-not-allowed border-slate-200/50 bg-slate-100/50 opacity-60"
+          : "cursor-text",
+        className
+      )}
+    >
+      <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="09:00:00"
+        aria-describedby={hintId}
+        disabled={disabled}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+        className="min-w-0 flex-1 border-0 bg-transparent py-0 font-mono text-[13px] tabular-nums text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
+      />
+    </div>
+  )
+
   return (
-    <div className="w-fit max-w-full">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            className={cn(
-              "flex h-10 w-fit min-w-[7.5rem] max-w-[11rem] shrink-0 cursor-text items-center gap-2 rounded-[length:var(--radius-md)] border px-2.5 transition-[border-color,background-color,box-shadow] focus-within:border-[#0071e3]/45 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0071e3]/12",
-              className
-            )}
-          >
-            <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
-            <input
-              id={id}
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="09:00:00"
-              aria-describedby={hintId}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault()
-                  ;(e.target as HTMLInputElement).blur()
-                }
-              }}
-              className="min-w-0 flex-1 border-0 bg-transparent py-0 font-mono text-[13px] tabular-nums text-slate-900 outline-none placeholder:text-slate-400"
-            />
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-[16rem]">
-          {hintText}
-        </TooltipContent>
-      </Tooltip>
+    <div className={cn("max-w-full", wrapperClassName ?? "w-fit")}>
+      {disabled ? (
+        trigger
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[16rem]">
+            {hintText}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <span id={hintId} className="sr-only">
         {hintText}
       </span>

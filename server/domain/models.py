@@ -39,6 +39,29 @@ Schedule = Annotated[
 ]
 
 
+class QuietHoursConfig(BaseModel):
+    """Local wall-clock window when automatic refreshes are deferred (MYPI_TZ)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool = False
+    start_local: str = Field("22:00", alias="startLocal", description="HH:MM or HH:MM:SS")
+    end_local: str = Field("07:00", alias="endLocal", description="HH:MM or HH:MM:SS")
+
+    @field_validator("start_local", "end_local")
+    @classmethod
+    def _validate_clock(cls, v: str) -> str:
+        if not _TIME_RE.match(v):
+            raise ValueError(f"time must be HH:MM or HH:MM:SS (got {v!r})")
+        return v
+
+    @model_validator(mode="after")
+    def _start_neq_end_when_enabled(self) -> QuietHoursConfig:
+        if self.enabled and self.start_local.strip() == self.end_local.strip():
+            raise ValueError("quietHours startLocal and endLocal must differ when enabled")
+        return self
+
+
 class Scene(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -59,6 +82,7 @@ class AppConfig(BaseModel):
     scenes: list[Scene] = Field(default_factory=list)
     frame_tuning: dict[str, Any] = Field(default_factory=dict, alias="frameTuning")
     device_profile: dict[str, Any] = Field(default_factory=dict, alias="deviceProfile")
+    quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig, alias="quietHours")
 
 
 class WallRun(BaseModel):

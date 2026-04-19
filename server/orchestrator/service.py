@@ -176,7 +176,7 @@ class WallOrchestrator:
                 continue
             raw = last_map.get(sc.id)
             last = _parse_iso(raw) if raw else None
-            nxt = next_fire_time(sc, last, now, self._tz)
+            nxt = next_fire_time(sc, last, now, self._tz, cfg.quiet_hours)
             if nxt is not None and nxt <= now_buffered:
                 due_scenes.append(sc)
         due_scenes.sort(key=lambda s: (s.tie_break_priority, s.id))
@@ -273,7 +273,9 @@ class WallOrchestrator:
                 continue
             raw = last_map.get(sc.id)
             last = _parse_iso(raw) if raw else None
-            nxts = future_fire_times(sc, last, now, self._tz, limit=10, max_hours=24)
+            nxts = future_fire_times(
+                sc, last, now, self._tz, limit=10, max_hours=24, quiet=cfg.quiet_hours
+            )
 
             plug = self._registry.get(sc.template_id)
             label = (sc.name or "").strip() or (
@@ -306,7 +308,7 @@ class WallOrchestrator:
         st = load_schedule_state()
         last_map = st.get("lastShownAtBySceneId", {})
         now = datetime.now(UTC)
-        tmin = global_min_next(cfg.scenes, last_map, now, self._tz)
+        tmin = global_min_next(cfg.scenes, last_map, now, self._tz, cfg.quiet_hours)
         job_id = "wall_alarm"
         if tmin is not None:
             log.info(f"Orchestrator: Rescheduled next wakeup for {tmin.isoformat()}")

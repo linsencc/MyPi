@@ -1,5 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react"
+import { ArrowRight } from "lucide-react"
 
+import { editDialogFieldClass, editDialogLabelClass } from "@/app/edit-dialog-styles"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -16,27 +18,46 @@ import {
 } from "@/data/frame-config"
 import { dialogShell } from "@/lib/dialog-shell"
 import { cn } from "@/lib/utils"
+import { ScheduleTimePicker } from "@/components/ScheduleTimePicker"
+import { Switch } from "@/components/ui/switch"
+import type { QuietHours } from "@/types/api"
 
 /** 与 INKYPI_SLIDER_SPECS 顺序一致，供说明与滑块对照 */
 const INK_RECOMMENDED_NUMBERS_LINE = INKYPI_SLIDER_SPECS.map((s) =>
   s.defaultValue.toFixed(2),
 ).join(" / ")
 
+const DEFAULT_QUIET: QuietHours = {
+  enabled: false,
+  startLocal: "22:00",
+  endLocal: "07:00",
+}
+
+function clockHead(s: string): string {
+  return (s ?? "").trim().slice(0, 5)
+}
+
 export function FrameSettingsDialog({
   open,
   onOpenChange,
   committedConfig,
+  committedQuietHours,
   onCommit,
+  onNotify,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   committedConfig: FrameDisplayConfig
-  onCommit: (next: FrameDisplayConfig) => void
+  committedQuietHours: QuietHours
+  onCommit: (next: FrameDisplayConfig, quietHours: QuietHours) => void
+  onNotify?: (message: string) => void
 }) {
+  const qh = committedQuietHours ?? DEFAULT_QUIET
   const [draft, setDraft] = useState<FrameDisplayConfig>(() => ({
     orientation: committedConfig.orientation,
     imageSettings: { ...committedConfig.imageSettings },
   }))
+  const [quietDraft, setQuietDraft] = useState<QuietHours>(() => ({ ...qh }))
 
   useEffect(() => {
     if (!open) return
@@ -44,7 +65,8 @@ export function FrameSettingsDialog({
       orientation: committedConfig.orientation,
       imageSettings: { ...committedConfig.imageSettings },
     })
-  }, [open])
+    setQuietDraft({ ...(committedQuietHours ?? DEFAULT_QUIET) })
+  }, [open, committedConfig, committedQuietHours])
 
   const resetSlider = (key: keyof InkypiImageSettings) => {
     const spec = INKYPI_SLIDER_SPECS.find((s) => s.key === key)
@@ -63,11 +85,18 @@ export function FrameSettingsDialog({
   }
 
   const handleSave = () => {
-    onCommit({
-      orientation: draft.orientation,
-      imageSettings: { ...draft.imageSettings },
-      timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
-    })
+    if (quietDraft.enabled && clockHead(quietDraft.startLocal) === clockHead(quietDraft.endLocal)) {
+      onNotify?.("勿扰开始与结束时间不能相同")
+      return
+    }
+    onCommit(
+      {
+        orientation: draft.orientation,
+        imageSettings: { ...draft.imageSettings },
+        timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
+      },
+      quietDraft
+    )
   }
 
   return (
@@ -114,6 +143,58 @@ export function FrameSettingsDialog({
                 >
                   竖屏
                 </button>
+              </div>
+            </section>
+
+            <section className="space-y-3 border-t border-slate-100 pt-4">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  夜间勿扰
+                </h3>
+                <Switch
+                  checked={quietDraft.enabled}
+                  onCheckedChange={(v) => {
+                    setQuietDraft((q) => ({ ...q, enabled: v }))
+                    if (v) {
+                      requestAnimationFrame(() => document.getElementById("quiet-start")?.focus())
+                    }
+                  }}
+                  aria-label="启用夜间勿扰"
+                />
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Label htmlFor="quiet-start" className={editDialogLabelClass}>
+                    开始（含）
+                  </Label>
+                  <ScheduleTimePicker
+                    id="quiet-start"
+                    value={quietDraft.startLocal}
+                    onChange={(next) => setQuietDraft((q) => ({ ...q, startLocal: next }))}
+                    disabled={!quietDraft.enabled}
+                    wrapperClassName="w-full min-w-0"
+                    className={cn(editDialogFieldClass, "min-w-0 w-full max-w-none")}
+                  />
+                </div>
+                <div
+                  className="hidden shrink-0 pb-2.5 text-slate-300 sm:flex sm:items-center sm:justify-center sm:self-end"
+                  aria-hidden
+                >
+                  <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Label htmlFor="quiet-end" className={editDialogLabelClass}>
+                    结束（不含）
+                  </Label>
+                  <ScheduleTimePicker
+                    id="quiet-end"
+                    value={quietDraft.endLocal}
+                    onChange={(next) => setQuietDraft((q) => ({ ...q, endLocal: next }))}
+                    disabled={!quietDraft.enabled}
+                    wrapperClassName="w-full min-w-0"
+                    className={cn(editDialogFieldClass, "min-w-0 w-full max-w-none")}
+                  />
+                </div>
               </div>
             </section>
 

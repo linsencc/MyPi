@@ -198,7 +198,9 @@ export default function App() {
           open={frameDialogOpen}
           onOpenChange={setFrameDialogOpen}
           committedConfig={frameConfig}
-          onCommit={(next) => void commitFrameDialog(next)}
+          committedQuietHours={config.quietHours}
+          onCommit={(next, qh) => void commitFrameDialog(next, qh)}
+          onNotify={showToast}
         />
 
         <EditSceneDialog

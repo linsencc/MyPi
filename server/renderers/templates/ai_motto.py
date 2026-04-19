@@ -16,11 +16,13 @@ Environment variables:
   MYPI_LLM_PROXY               – HTTP(S) proxy for LLM calls
   MYPI_PINTEREST_ACCESS_TOKEN  – Pinterest API OAuth access token (or PINTEREST_ACCESS_TOKEN)
   MYPI_PINTEREST_COUNTRY       – ISO 3166-1 alpha-2 for partner search (default: US)
-  MYPI_PINTEREST_BOARD_ID      – Optional numeric board id (e.g. your wallpaper moodboard). When set, pins from
-                                  this board are loaded first (same account as token), then partner search fills in.
-                                  URL pinterest.com/…/wallpaper/ → id from Pinterest API or site JSON, not the slug alone.
+  MYPI_PINTEREST_BOARD_ID      – Optional numeric board id (e.g. wallpaper moodboard like pinterest.com/elliotprl/wallpaper/).
+                                  When set, pins from this board load first (same Pinterest account as token), then partner search.
+                                  Resolve id via Pinterest API or saved pin JSON — not the URL slug alone.
   MYPI_MOTTO_FETCH_MAX_SIDE    – Max long edge when downloading (default: 2400; matches frame aspect)
   MYPI_MOTTO_COLOR_BOOST       – PIL Color enhance on the photo layer (default: 1.15 for color e-ink). Set 1.0 to disable.
+  MYPI_MOTTO_BEAUTIFY          – if 0: skip mild contrast/sat on downloaded art (default: 1 / on).
+  MYPI_MOTTO_SCRIM_MAX         – bottom dark scrim max opacity 0–1 (default: 0.76). Stronger = darker footer band for text.
   MYPI_MOTTO_FONT              – Optional path to .ttf/.otf/.ttc for the quote (literary title font).
   MYPI_MOTTO_FONT_BOLD         – Optional path to a bolder face for the quote; if unset, stroke is used on MYPI_MOTTO_FONT or default CJK.
   MYPI_MOTTO_IMAGE_NO_PROXY      – if 1/true: Pinterest/image HTTP without proxy (LLM may still use proxy)
@@ -46,6 +48,14 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageStat
 
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.cjk_font import _load_cjk_font, _wrap_lines
+from renderers.templates.motto_diversity import (
+    RETRY_DIVERSIFY_SUFFIX,
+    append_motto_to_recent,
+    format_recent_block,
+    is_motto_too_similar,
+    load_recent_mottos,
+    pick_motto_stratum,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,52 +68,46 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
     你是一位每天陪伴用户的智慧伙伴。请生成以下两项内容，以纯 JSON 返回：
 
     {
-      "motto": "一句中文寄语",
+      "motto": "「正文摘录」 -- 出处",
       "image_prompt": "English keywords for landscape wallpaper image search"
     }
 
     严格要求：
     - 只输出上述 JSON，不加任何其他内容、标签或解释
-    - motto（核心）：要有**具体来历或质感**，避免空洞鸡汤与万能句（少用「愿你」「加油」「不负韶华」等套话）。
-      优先从下列**类型中选一类**完成（每次一类即可，不要杂糅）：
-      * 中外文学名著、作家语录的**短摘**（可带书名，六字内简称即可）
-      * 经典**影视/动画台词**（**必须**用《片名》标注来源；避免总是同一大热片）
-      * **诗词、古文**一句（可带作者；勿堆砌生僻字）
-      * 历史人物、思想家、科学家等**真实语录**（带人名）
-      * 近现代杂文、随笔中的**锐利短句**（可带作者）
-      若用翻译句，读感要像中文书面语；总长度 **36 字以内**，不打招呼、不写日期。
-    - image_prompt: 英文检索用语，用于匹配**全彩「风景壁纸」风**配图（竖屏画框全幅背景 + 底部叠字），与寄语意境相合。
-      整体气质参考 Pinterest 上常见的 **scenery wallpaper / desktop wallpaper art** 类收藏：
-      * **偏插画与氛围**：水彩/数字绘景、吉卜力式开阔自然、海边小镇、花田、阳台望远、林荫街景等**无人物主体**的风景；
-        可与 **anime scenery wallpaper**、**aesthetic landscape illustration**、**cozy village**、**mountain lake** 等语汇同向
-      * 也允许偏写实的 **color landscape photography**，但仍要 **壁纸感**（层次、色彩、治愈），不要新闻纪实风
-      * 必须 **full color**、**colorful**；禁止黑白、单色、sepia、monochrome、人脸特写、室内生活场景为主体
+    - motto（核心）**格式固定**（须一字不差遵循标点与空格）：
+      · 整段必须为：`「……」 -- 出处`
+      · 正文用**中文直角引号**「」包裹；`--` 为**两个英文连字符**，其**左右各一个半角空格**
+      · **出处**：文学写书名或作者（如 `红楼梦` 或 `曹雪芹`）；影视写 `《片名》`；诗词古文写作者；人物写人名（可带朝代/国别简称）
+      · 避免空洞鸡汤（少用「愿你」「加油」「不负韶华」等）；翻译句读感要像中文书面语
+    - **用户消息**中会给出【本次唯一维度】与【近期去重】。你必须**同时**遵守：
+      · 选题**只能**落在该维度内（例如指定「仅华语影视」时，不得输出欧美片；指定「仅诗词」时不得输出影视）。
+      · 寄语须**明显区别于**「近期去重」列表，勿逐字复述或仅改一两字。
+      · 勿依赖模型训练数据里最常出现的少数「全球通用品」；宁可选略冷门但贴切的作品。
+      整段 motto（含「」、`--` 与出处）**40 字以内**，不打招呼、不写日期。
+    - image_prompt: 英文关键词串，用于找**全彩桌面风景壁纸插画**（竖屏满幅背景 + 底部叠字），与寄语意境相合。
+      审美对齐 Pinterest 上 **desktop wallpaper art / anime scenery wallpaper** 类画板（如偏插画、水彩、日系动画背景感、治愈系远景）：
+      * **优先**：手绘/数字**插画绘景**、**watercolor**、**anime landscape illustration**、**aesthetic desktop background**、
+        whimsical、painterly、**cozy village**、**mountain lake**、coastal town、flower field、rooftop view、balcony scenery、
+        tree-lined street、**ghibli-inspired** 或 **studio ghibli style** 式开阔自然（**无人物或人物极小不可辨**，勿主体人像）
+      * **次要**才可偏写实风光片，且须柔和、梦幻、壁纸感，禁止新闻/街拍/室内家居为主
+      * 必须 **full color**、**colorful**、soft light；禁止黑白、sepia、人脸特写、文字水印
       * 适合 **vertical / portrait** 或易竖裁的横幅远景；不要画面内文字、画框
-      * 控制在 40–60 词
+      * 控制在 40–60 词，多写画风词（illustration / wallpaper / anime scenery / aesthetic）
 """)
 
 _USER_PROMPT = (
-    "请给我今天的一句寄语，以及相配的全彩「风景壁纸风」英文检索用语（偏插画/氛围壁纸，与桌面风景壁纸审美相近）。"
-)
-
-# 轮换「侧重」，降低连续几天内容雷同（与 system 中的类型呼应）。
-_MOTTO_FOCUS_ROTATION: tuple[str, ...] = (
-    "本次请优先：文学摘句或作家金句，可带简称书名。",
-    "本次请优先：影视或动画台词，务必带《片名》，勿与常见鸡汤混同。",
-    "本次请优先：古诗词或古文一句，可带作者。",
-    "本次请优先：哲学家、科学家、史学家等人物短语录，带人名。",
-    "本次请优先：近现代杂文、随笔中的句子，带作者。",
-    "本次请优先：外国文学汉译名句，可带译者或书名。",
+    "请给我今天的一句寄语（motto 必须严格为 `「正文」 -- 出处` 格式），以及相配的英文 image_prompt：要便于检索 "
+    "**desktop wallpaper art / anime scenery wallpaper** 那种插画感、水彩感、治愈系远景（与 Pinterest 上 scenery 壁纸画板同类）。"
 )
 
 # ── Fallbacks ───────────────────────────────────────────────────────
 _FALLBACK_MESSAGES = (
-    "人生如逆旅，我亦是行人。——苏轼",
-    "世上只有一种英雄主义，就是在认清生活真相之后依然热爱生活。——罗曼·罗兰",
-    "一个人知道自己为什么而活，就可以忍受任何一种生活。——尼采",
-    "我来到这个世界上，为了看看太阳和蓝色的地平线。——巴尔蒙特",
-    "路漫漫其修远兮，吾将上下而求索。——屈原",
-    "生活不可能像你想象得那么好，但也不会像你想象得那么糟。——莫泊桑",
+    "「人生如逆旅，我亦是行人。」 -- 苏轼",
+    "「世上只有一种英雄主义，就是在认清生活真相之后依然热爱生活。」 -- 罗曼·罗兰",
+    "「一个人知道自己为什么而活，就可以忍受任何一种生活。」 -- 尼采",
+    "「我来到这个世界上，为了看看太阳和蓝色的地平线。」 -- 巴尔蒙特",
+    "「路漫漫其修远兮，吾将上下而求索。」 -- 屈原",
+    "「生活不可能像你想象得那么好，但也不会像你想象得那么糟。」 -- 莫泊桑",
 )
 
 
@@ -149,13 +153,6 @@ def _load_motto_quote_font(size: int) -> tuple[ImageFont.FreeTypeFont, bool]:
         if f is not None:
             return f, True
     return _load_cjk_font(size), False
-
-
-def _motto_focus_line() -> str:
-    """Daily-rotating emphasis so LLM output does not cluster on one source type."""
-    now = datetime.now()
-    i = (now.timetuple().tm_yday * 7 + now.month * 3 + now.weekday()) % len(_MOTTO_FOCUS_ROTATION)
-    return _MOTTO_FOCUS_ROTATION[i]
 
 
 def _strip_thinking(text: str) -> str | None:
@@ -235,57 +232,83 @@ def _call_llm() -> tuple[str, str | None]:
     model = os.environ.get("MYPI_LLM_MODEL", _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
     timeout = int(os.environ.get("MYPI_LLM_TIMEOUT", str(_DEFAULT_TIMEOUT)))
 
-    user_content = f"{_USER_PROMPT}\n\n{_motto_focus_line()}"
-    payload = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "max_tokens": 400,
-        "temperature": 0.9,
-    }).encode()
-
-    req = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "https://github.com/mypi-frame",
-            "X-Title": "MyPi Digital Frame",
-        },
-        method="POST",
+    recent = load_recent_mottos()
+    stratum = pick_motto_stratum()
+    log.info("ai_motto: stratum=%s recent_lines=%s", stratum.key, len(recent))
+    base_user = (
+        f"{_USER_PROMPT}\n\n{stratum.instruction}\n\n{format_recent_block(recent)}"
     )
-
     opener = _build_opener()
+
+    motto = ""
+    image_prompt: str | None = None
     raw = ""
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            body = json.loads(resp.read())
-        raw = (body["choices"][0]["message"].get("content") or "").strip()
-        log.info("ai_motto: LLM raw %d chars", len(raw))
 
-        data = _parse_llm_json_blob(raw)
-        if not data:
-            log.warning("ai_motto: LLM response is not valid JSON, no image_prompt")
-            text = _strip_thinking(raw)
+    for attempt in range(3):
+        user_content = base_user if attempt == 0 else f"{base_user}\n\n{RETRY_DIVERSIFY_SUFFIX}"
+        payload = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "max_tokens": 400,
+            "temperature": 0.92,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/mypi-frame",
+                "X-Title": "MyPi Digital Frame",
+            },
+            method="POST",
+        )
+
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                body = json.loads(resp.read())
+            raw = (body["choices"][0]["message"].get("content") or "").strip()
+            log.info("ai_motto: LLM attempt %s raw %d chars", attempt + 1, len(raw))
+
+            data = _parse_llm_json_blob(raw)
+            if not data:
+                log.warning("ai_motto: LLM response is not valid JSON, no image_prompt")
+                text = _strip_thinking(raw)
+                return text or _get_fallback(), None
+
+            motto = (data.get("motto") or "").strip()
+            image_prompt = _image_prompt_from_data(data)
+            if not motto:
+                motto = _strip_thinking(raw) or _get_fallback()
+            if motto and not image_prompt:
+                log.info("ai_motto: LLM returned motto but empty image_prompt; text-only layout")
+
+            if motto and not is_motto_too_similar(motto, recent):
+                append_motto_to_recent(motto)
+                return motto, image_prompt
+
+            if attempt < 2:
+                log.warning(
+                    "ai_motto: motto too similar to recent or weak diversity, retrying (%s/2)",
+                    attempt + 1,
+                )
+                continue
+            log.warning("ai_motto: still similar after retries; using last motto")
+            append_motto_to_recent(motto)
+            return motto, image_prompt
+        except KeyError:
+            text = _strip_thinking(raw) if raw else None
+            log.warning("ai_motto: LLM response missing expected fields")
             return text or _get_fallback(), None
+        except Exception as exc:
+            log.warning("ai_motto: LLM call failed: %s", exc)
+            return _get_fallback(), None
 
-        motto = (data.get("motto") or "").strip()
-        image_prompt = _image_prompt_from_data(data)
-        if not motto:
-            motto = _strip_thinking(raw) or _get_fallback()
-        if motto and not image_prompt:
-            log.info("ai_motto: LLM returned motto but empty image_prompt; text-only layout")
-        return motto, image_prompt
-    except KeyError:
-        text = _strip_thinking(raw) if raw else None
-        log.warning("ai_motto: LLM response missing expected fields")
-        return text or _get_fallback(), None
-    except Exception as exc:
-        log.warning("ai_motto: LLM call failed: %s", exc)
-        return _get_fallback(), None
+    return motto or _get_fallback(), image_prompt
 
 
 # ── Web image fetch (keyword → photo) ───────────────────────────────
@@ -303,9 +326,9 @@ _TAG_STOPWORDS = frozenset({
     "like", "also", "only", "just", "even", "still", "well", "both", "each", "every",
     "foreground", "background", "middle", "distance", "layered", "layers", "clear", "sharp",
     "full", "color", "colorful", "colour", "vivid", "rich", "bright", "vertical", "portrait",
-    "composition", "cinematic", "photography", "photo", "realistic", "anime", "illustration",
-    "painting", "watercolor", "impressionist", "pastel", "film", "grain", "bokeh",
-    "studio", "ghibli", "wash", "sumi", "monochrome", "sepia",
+    "composition", "cinematic", "photography", "photo", "realistic",
+    "impressionist", "pastel", "film", "grain", "bokeh",
+    "studio", "wash", "sumi", "monochrome", "sepia",
     "wallpaper", "wallpapers", "desktop", "laptop", "aesthetic",
 })
 
@@ -320,21 +343,24 @@ def _tags_from_image_prompt(prompt: str) -> str:
             continue
         seen.add(w)
         picked.append(w)
-        if len(picked) >= 4:
+        if len(picked) >= 6:
             break
     if not picked:
-        return "landscape,scenic,mountain,lake"
+        return "anime,landscape,scenic,wallpaper,watercolor"
     return ",".join(picked)
 
 
 def _pinterest_search_query_from_tags(tags_csv: str) -> str:
-    """Partner search: scenery wallpaper / desktop art mood (see user moodboard style)."""
+    """Partner search: align with desktop wallpaper / anime scenery mood boards (e.g. wallpaper art collections)."""
     parts = [t.strip() for t in tags_csv.split(",") if t.strip()]
-    base = " ".join(parts[:5]) if parts else "scenic landscape nature"
+    base = " ".join(parts[:5]) if parts else "scenic landscape nature anime"
     return (
-        f"{base} scenery wallpaper desktop wallpaper art "
-        "anime landscape illustration aesthetic colorful vibrant "
-        "nature outdoor digital painting watercolor"
+        f"{base} "
+        "anime scenery wallpaper desktop wallpaper aesthetic art "
+        "desktop wallpaper illustration watercolor painterly "
+        "ghibli inspired landscape cozy village mountain lake "
+        "picturesque dreamy atmospheric colorful vibrant "
+        "digital painting aesthetic landscape wallpaper laptop"
     )
 
 
@@ -565,6 +591,17 @@ def _to_full_color_rgb(img: Image.Image) -> Image.Image:
     return rgb
 
 
+def _beautify_landscape_art(img: Image.Image) -> Image.Image:
+    """Mild contrast + saturation so wallpapers read richer on e-ink (cheap on Pi)."""
+    v = os.environ.get("MYPI_MOTTO_BEAUTIFY", "1").strip().lower()
+    if v in ("0", "false", "no", "off"):
+        return img
+    rgb = img.convert("RGB")
+    rgb = ImageEnhance.Contrast(rgb).enhance(1.06)
+    rgb = ImageEnhance.Color(rgb).enhance(1.05)
+    return rgb
+
+
 def _download_image_url(url: str, opener: urllib.request.OpenerDirector, timeout: int = 45) -> Image.Image | None:
     req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
     try:
@@ -669,10 +706,12 @@ _SECONDARY_COLOR = (110, 105, 98)
 _SUBTLE_COLOR = (150, 145, 138)
 _ACCENT_COLOR = (85, 80, 72)
 _DIVIDER_COLOR = (200, 196, 188)
-# Full-bleed overlay: warm paper + dark stroke for readability on bright skies.
-_QUOTE_FILL_ART = (252, 250, 245)
-_QUOTE_STROKE_ART = (28, 30, 36)
-_QUOTE_SHADOW_ART = (42, 40, 38)
+# Full-bleed: **dark bottom scrim** (not pale wash) so light text + dark stroke stay readable.
+_SCRIM_RGB = (22, 26, 36)
+_QUOTE_ON_SCRIM_FILL = (244, 240, 228)
+_QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
+_FOOTER_ON_SCRIM_A = (188, 182, 170)
+_FOOTER_ON_SCRIM_B = (138, 132, 122)
 
 
 def _infer_fetch_size(canvas_w: int, canvas_h: int) -> tuple[int, int]:
@@ -707,24 +746,23 @@ def _fit_image(src: Image.Image, target_w: int, target_h: int) -> Image.Image:
     return cropped.resize((target_w, target_h), Image.LANCZOS)
 
 
-def _overlay_gradient(canvas: Image.Image, y_start: int, fade_h: int,
-                      max_opacity: float = 0.96) -> None:
-    """Apply an ease-in gradient overlay of _BG_COLOR from y_start downward.
-
-    Uses a power curve (t^1.6) so the top of the gradient is nearly
-    invisible while the text zone reaches ~45-50% opacity — enough to
-    ensure readability on busy/dark backgrounds while still letting the
-    image breathe through.
-    """
+def _overlay_bottom_scrim(canvas: Image.Image, y_start: int, fade_h: int) -> None:
+    """Dark blue-gray scrim from y_start to bottom — text reads as light-on-dusk, not white-on-cream."""
+    raw = os.environ.get("MYPI_MOTTO_SCRIM_MAX", "0.76").strip()
+    try:
+        max_opacity = float(raw)
+    except ValueError:
+        max_opacity = 0.76
+    max_opacity = max(0.38, min(0.92, max_opacity))
     w = canvas.width
-    bg_strip = Image.new("RGB", (w, fade_h), _BG_COLOR)
+    strip = Image.new("RGB", (w, fade_h), _SCRIM_RGB)
     mask = Image.new("L", (w, fade_h))
     draw_mask = ImageDraw.Draw(mask)
     for y in range(fade_h):
         t = y / fade_h
-        alpha = int(255 * max_opacity * (t ** 1.6))
+        alpha = int(255 * max_opacity * (t ** 1.38))
         draw_mask.line([(0, y), (w - 1, y)], fill=alpha)
-    canvas.paste(bg_strip, (0, y_start), mask=mask)
+    canvas.paste(strip, (0, y_start), mask=mask)
 
 
 def _cn_date_str() -> str:
@@ -776,14 +814,15 @@ def _compose(
     if art:
         # ── Full-bleed image + gradient overlay ──────────────
         fitted = _fit_image(art, canvas_w, canvas_h)
+        fitted = _beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        grad_start = int(canvas_h * 0.45)
-        _overlay_gradient(img, grad_start, canvas_h - grad_start)
+        scrim_start = int(canvas_h * 0.38)
+        _overlay_bottom_scrim(img, scrim_start, canvas_h - scrim_start)
         draw = ImageDraw.Draw(img)
 
-        # Text sits in the opaque zone (lower ~28%)
-        text_zone_center = int(canvas_h * 0.76)
+        # Text sits in the lower third over the scrim (light fill + dark stroke)
+        text_zone_center = int(canvas_h * 0.74)
         size_px = max(26, int(36 * scale))
         font, quote_bold = _load_motto_quote_font(size_px)
         raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.05)))
@@ -799,30 +838,20 @@ def _compose(
         block_h = len(lines) * line_h
         y0 = text_zone_center - block_h // 2
 
-        shadow_off = max(1, int(1.5 * scale))
-        stroke_w = 0 if quote_bold else max(1, int(1.8 * scale))
+        stroke_w = max(2, int(2.2 * scale)) if not quote_bold else max(2, int(1.85 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
             tx = (canvas_w - tw) // 2
             ty = y0 + k * line_h
-            if quote_bold:
-                draw.text(
-                    (tx + shadow_off, ty + shadow_off),
-                    ln,
-                    fill=_QUOTE_SHADOW_ART,
-                    font=font,
-                )
-                draw.text((tx, ty), ln, fill=_QUOTE_FILL_ART, font=font)
-            else:
-                draw.text(
-                    (tx, ty),
-                    ln,
-                    fill=_QUOTE_FILL_ART,
-                    font=font,
-                    stroke_width=stroke_w,
-                    stroke_fill=_QUOTE_STROKE_ART,
-                )
+            draw.text(
+                (tx, ty),
+                ln,
+                fill=_QUOTE_ON_SCRIM_FILL,
+                font=font,
+                stroke_width=stroke_w,
+                stroke_fill=_QUOTE_ON_SCRIM_STROKE,
+            )
 
         # Footer: date + attribution
         footer_y = canvas_h - int(28 * scale)
@@ -835,8 +864,8 @@ def _compose(
         dw, aw = db[2] - db[0], ab[2] - ab[0]
         total = dw + spacer + aw
         x0 = (canvas_w - total) // 2
-        draw.text((x0, footer_y), date_str, fill=_SECONDARY_COLOR, font=small)
-        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_SUBTLE_COLOR, font=small)
+        draw.text((x0, footer_y), date_str, fill=_FOOTER_ON_SCRIM_A, font=small)
+        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_FOOTER_ON_SCRIM_B, font=small)
 
     else:
         # ── Text only (no image) ─────────────────────────────

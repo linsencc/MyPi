@@ -25,6 +25,11 @@ def wall_runs_path() -> pathlib.Path:
     return data_dir() / "wall_runs.jsonl"
 
 
+def recent_ai_mottos_path() -> pathlib.Path:
+    """JSONL of recent ai_motto outputs for prompt de-duplication (see motto_diversity)."""
+    return data_dir() / "recent_ai_mottos.jsonl"
+
+
 def output_dir() -> pathlib.Path:
     o = data_dir() / "output"
     o.mkdir(parents=True, exist_ok=True)

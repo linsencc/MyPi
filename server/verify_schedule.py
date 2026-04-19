@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from zoneinfo import ZoneInfo
 
-from domain.models import Scene
+from domain.models import QuietHoursConfig, Scene
 from orchestrator.next_run import global_min_next, next_fire_time
 
 
@@ -131,6 +131,41 @@ def main() -> int:
         fails += 1
     else:
         print("OK TC-S10 cron_weekly last week -> same Mon 10:00 even if now past slot")
+
+    # TC-Q1: overnight quiet defers interval into next morning
+    qh = QuietHoursConfig(enabled=True, start_local="22:00", end_local="07:00")
+    si2 = _scene_interval(3600)
+    last_even = datetime(2026, 1, 1, 14, 0, 0, tzinfo=UTC)  # 22:00 CST Jan 1
+    t_q = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
+    nq1 = next_fire_time(si2, last_even, t_q, tz, qh)
+    exp_q1 = datetime(2026, 1, 1, 23, 0, 0, tzinfo=UTC)  # Tue 07:00 CST Jan 2
+    if nq1 != exp_q1:
+        print("FAIL TC-Q1 quiet interval defer", nq1, "!=", exp_q1)
+        fails += 1
+    else:
+        print("OK TC-Q1 quiet defers interval 23:00 -> next 07:00 local")
+
+    # TC-Q2: cron 23:00 in quiet -> exit next day 07:00 when all weekdays allowed
+    sc_all = _scene_cron([0, 1, 2, 3, 4, 5, 6], "23:00")
+    last_m = datetime(2026, 4, 6, 0, 0, 0, tzinfo=UTC)  # Mon 08:00 CST
+    mon_20_cst = datetime(2026, 4, 6, 12, 0, 0, tzinfo=UTC)  # Mon 20:00 CST
+    nq2 = next_fire_time(sc_all, last_m, mon_20_cst, tz, qh)
+    exp_q2 = datetime(2026, 4, 6, 23, 0, 0, tzinfo=UTC)  # Tue 07:00 CST Apr 7
+    if nq2 != exp_q2:
+        print("FAIL TC-Q2 quiet cron defer", nq2, "!=", exp_q2)
+        fails += 1
+    else:
+        print("OK TC-Q2 quiet defers cron 23:00 -> next 07:00 local")
+
+    # TC-Q3: global_min_next respects quiet (earlier raw time becomes post-quiet)
+    gmin_q = global_min_next([a, b], last_map, mon_8_utc, tz, qh)
+    # b=09:00 Mon not in quiet; a=10:00 Mon not in quiet -> still 09:00
+    exp_q3 = datetime(2026, 4, 6, 1, 0, 0, tzinfo=UTC)
+    if gmin_q != exp_q3:
+        print("FAIL TC-Q3 global_min_next quiet", gmin_q, "!=", exp_q3)
+        fails += 1
+    else:
+        print("OK TC-Q3 global_min_next with quiet (daytime slots unchanged)")
 
     # --- Integration: wall/state upcoming shape ---
     from app.factory import create_app
