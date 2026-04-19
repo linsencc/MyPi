@@ -85,7 +85,7 @@ export default function App() {
         <div className="mx-auto max-w-4xl space-y-10">
           <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <h1 className="font-display text-[1.75rem] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[2rem]">
-              壁上此刻
+              画框管理
             </h1>
             <div className="flex flex-wrap gap-2">
               <Tooltip>
@@ -138,17 +138,40 @@ export default function App() {
             previewFilter={previewFilter}
           />
 
-          <WallRunsTimeline
-            runs={wallRuns}
-            upcoming={wallState?.upcoming ?? []}
-            sceneNames={sceneNames}
-            currentOnWall={currentOnWallHeader}
-            queuedDisplaySceneIds={wallState?.queuedDisplaySceneIds ?? []}
-            maxEvents={frameConfig.timelineMaxEvents ?? 30}
-          />
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-start lg:gap-5">
+            <div className="min-w-0 max-w-full overflow-x-auto">
+            <WallRunsTimeline
+              runs={wallRuns}
+              upcoming={wallState?.upcoming ?? []}
+              sceneNames={sceneNames}
+              currentOnWall={currentOnWallHeader}
+              queuedDisplaySceneIds={wallState?.queuedDisplaySceneIds ?? []}
+              maxEvents={frameConfig.timelineMaxEvents ?? 30}
+            />
+            </div>
+
+            <section
+              className="min-w-0 space-y-3 lg:sticky lg:top-6 lg:self-start"
+              aria-labelledby="scene-mgmt-heading"
+            >
+              <h2
+                id="scene-mgmt-heading"
+                className="text-lg font-semibold tracking-tight text-slate-900"
+              >
+                场景管理
+              </h2>
+              <SceneList
+                scenes={scenes}
+                templates={templates}
+                onToggle={handleSceneToggle}
+                onEdit={openEdit}
+                onDelete={handleSceneDelete}
+              />
+            </section>
+          </div>
 
           <section className="space-y-5">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">绘画模版</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">画框模板</h2>
 
             <ul className="grid select-none grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10.25rem,1fr))] sm:gap-3">
               {templates.map((t) => {
@@ -167,17 +190,6 @@ export default function App() {
                 )
               })}
             </ul>
-          </section>
-
-          <section className="space-y-5">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">场景管理</h2>
-            <SceneList
-              scenes={scenes}
-              templates={templates}
-              onToggle={handleSceneToggle}
-              onEdit={openEdit}
-              onDelete={handleSceneDelete}
-            />
           </section>
         </div>
 

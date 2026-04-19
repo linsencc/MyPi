@@ -519,7 +519,7 @@ def _compose(
         footer_y = canvas_h - int(28 * scale)
         small = _load_cjk_font(max(11, int(13 * scale)))
         date_str = _cn_date_str()
-        attr_str = "— AI 每日寄语"
+        attr_str = "— 每日寄语"
         spacer = int(20 * scale)
         db = draw.textbbox((0, 0), date_str, font=small)
         ab = draw.textbbox((0, 0), attr_str, font=small)
@@ -560,7 +560,7 @@ def _compose(
         footer_y = div_y + int(18 * scale)
         small = _load_cjk_font(max(11, int(14 * scale)))
         date_str = _cn_date_str()
-        attr_str = "— AI 每日寄语"
+        attr_str = "— 每日寄语"
         spacer = int(20 * scale)
         db = draw.textbbox((0, 0), date_str, font=small)
         ab = draw.textbbox((0, 0), attr_str, font=small)
@@ -576,7 +576,7 @@ def _compose(
 # ── Template class ──────────────────────────────────────────────────
 
 class AiMottoTemplate(WallTemplate):
-    display_name = "AI 每日寄语"
+    display_name = "每日寄语"
 
     def render(self, ctx: RenderContext) -> Image.Image:
         params = ctx.scene.template_params or {}

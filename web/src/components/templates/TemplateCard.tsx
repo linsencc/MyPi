@@ -60,14 +60,14 @@ export const TemplateCard = memo(function TemplateCard({
           </TooltipContent>
         </Tooltip>
 
-        <div className="flex shrink-0 touch-manipulation items-center justify-end gap-3 pt-0.5">
+        <div className="flex shrink-0 touch-manipulation items-center justify-end gap-1.5 pt-0.5 sm:gap-2">
               <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 rounded-full border border-slate-200/80 bg-white/95 text-slate-400/80 shadow-[0_1px_2px_rgb(15_23_42/0.06)] transition-[color,background-color,box-shadow] hover:bg-white hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.08)] disabled:opacity-50"
+                className="h-9 w-9 shrink-0 rounded-md text-slate-500 transition-colors hover:bg-slate-100/85 hover:text-slate-900 disabled:opacity-50"
                 disabled={renderBusy}
                 aria-label={`立即渲染「${title}」`}
                 aria-busy={renderBusy}
@@ -79,7 +79,7 @@ export const TemplateCard = memo(function TemplateCard({
                 <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top">立即渲染 (基于模版)</TooltipContent>
+            <TooltipContent side="top">立即渲染（基于画框模板）</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -87,7 +87,7 @@ export const TemplateCard = memo(function TemplateCard({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 rounded-full border border-slate-200/80 bg-white/95 text-slate-400/80 shadow-[0_1px_2px_rgb(15_23_42/0.06)] transition-[color,background-color,box-shadow] hover:bg-white hover:text-slate-800 hover:shadow-[0_2px_6px_rgb(15_23_42/0.08)]"
+                className="h-9 w-9 shrink-0 rounded-md text-slate-500 transition-colors hover:bg-slate-100/85 hover:text-slate-900"
                 aria-label={`创建场景「${title}」`}
                 onMouseDown={(e) => {
                   if (e.button === 0 && e.detail > 1) e.preventDefault()

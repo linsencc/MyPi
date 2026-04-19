@@ -180,7 +180,7 @@ export function EditSceneDialog({
               </DialogTitle>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-[min(20rem,calc(100vw-3rem))] break-words">
-              {scene?.id ? "编辑绘画模版" : "配置并创建新场景"}
+              {scene?.id ? "编辑画框模板" : "配置并创建新场景"}
             </TooltipContent>
           </Tooltip>
         </DialogHeader>

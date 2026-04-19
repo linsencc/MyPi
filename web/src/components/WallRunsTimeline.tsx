@@ -99,13 +99,15 @@ function dotClass(kind: DotKind, ok: boolean, queuedBehindDisplay: boolean): str
   )
 }
 
-const TIMELINE_ROW_MIN_H = "min-h-[2.625rem]"
-const TIMELINE_SIX_ROWS_MIN_H = "min-h-[15.75rem]"
+const TIMELINE_ROW_MIN_H = "min-h-[2.75rem]"
+const TIMELINE_SIX_ROWS_MIN_H = "min-h-[16.5rem]"
 const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
 /** 第三列不用 1fr，避免在宽屏上占满整行导致右侧大片空白仍落在 overflow 区域内抢手势 */
+/** 中间列放圆点；与左右列之间用 gap-x-3（见行上 class）统一间距 */
 const TIMELINE_GRID_COLS =
-  "8rem 1.25rem minmax(0, min(15rem, 60vw))" as const
-const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.625rem)" as const
+  "8rem 1.75rem minmax(0, min(15rem, 60vw))" as const
+/** 8rem + column-gap(0.75rem) + 轴线列一半(0.875rem)，与 gap-x-3 同步 */
+const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.75rem + 0.875rem)" as const
 
 /** 与 `.timeline-viewport-mask` 上下渐隐带大致对齐（约 0.85rem） */
 const TIMELINE_VIEWPORT_MASK_INSET_PX = 14
@@ -162,7 +164,7 @@ const TimelineRowItem = memo(
       >
       <div
         className={cn(
-          "grid items-center gap-0 py-1.5",
+          "grid items-center gap-x-3 gap-y-0 py-1.5",
           TIMELINE_ROW_MIN_H,
           kind === "playing" ? "bg-blue-600/[0.035]" : "hover:bg-slate-200/[0.09]",
           index !== totalRows - 1 && "border-b border-slate-200/[0.14]"
@@ -173,7 +175,7 @@ const TimelineRowItem = memo(
           dateTime={iso}
           className={cn(
             "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
-            "min-w-0 pr-2 text-[11px] leading-snug tracking-tight sm:text-xs",
+            "min-w-0 pr-1 text-[13px] leading-snug tracking-tight sm:text-[14px]",
             kind === "playing"
               ? "text-slate-600"
               : kind === "upcoming"
@@ -248,7 +250,7 @@ const TimelineRowItem = memo(
         </div>
         <span
           className={cn(
-            "min-w-0 truncate pl-2 text-[13px]",
+            "min-w-0 truncate pl-0 text-[14px] leading-snug sm:text-[15px]",
             kind === "playing"
               ? "font-medium text-slate-900"
               : kind === "upcoming"
@@ -510,7 +512,7 @@ export function WallRunsTimeline({
           时间轴
         </h2>
         <div className="select-none">
-          <p className="py-6 text-center text-[13px] leading-relaxed text-slate-500">
+          <p className="py-6 text-center text-[14px] leading-relaxed text-slate-500">
             暂无记录。启用场景并执行「立即上墙」后会显示在这里。
           </p>
         </div>
@@ -532,7 +534,7 @@ export function WallRunsTimeline({
               TIMELINE_VIEWPORT_H
             )}
           >
-            <p className="text-center text-[12px] text-slate-400">暂无历史记录</p>
+            <p className="text-center text-[13px] text-slate-400">暂无历史记录</p>
           </div>
         ) : (
           <div

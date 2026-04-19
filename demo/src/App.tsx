@@ -42,7 +42,7 @@ export default function App() {
         <div className="mx-auto max-w-4xl space-y-10">
           <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <h1 className="font-display text-[1.75rem] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[2rem]">
-              壁上此刻
+              画框管理
             </h1>
             <div className="flex flex-wrap gap-2">
               <Tooltip>
