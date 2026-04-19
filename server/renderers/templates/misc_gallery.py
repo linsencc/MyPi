@@ -1,0 +1,320 @@
+"""Random quote wall template: picks one line from a curated corpus each render."""
+
+from __future__ import annotations
+
+import random
+
+from PIL import Image, ImageDraw
+
+from renderers.template_base import RenderContext, WallTemplate
+
+# Prefer breaking lines after these (CJK typography); includes ASCII quotes for English.
+_SOFT_BREAK_AFTER: frozenset[str] = frozenset(
+    list(" \t，、；：。！？!?,.;:「」『』（）()[]【】—…") + ['"', "'"]
+)
+# Do not leave these as the first character on a new line (hang on previous).
+_NO_LINE_START: frozenset[str] = frozenset("，。！？；：、）」』’”,.!?;:")
+
+_MISC_QUOTES: tuple[str, ...] = (
+    # 与 Obsidian《杂锦.md》编号条目一一对应（一条一行，不合并）。
+    # 节一：每个优秀的人，都有一段沉默的时光
+    '每个优秀的人，都有一段沉默的时光。那段时光，是付出了很多努力，却得不到结果的日子，我们把它叫做扎根！——习近平',
+    '长期的认识并不会日积月累地成为恋爱，好比冬季每天的气候吧，你没法把今天的温度加在昨天的上面，好等明天积成个和暖的春日。——钱钟书',
+    '我来不及认真地年轻，待明白过来时，只能选择认真地老去。读书多了，容颜自然改变，许多时候，自己可能以为许多看过的书籍都成了过眼云烟，不复记忆，其实它们仍是潜在的。在气质里，在谈吐上，在胸襟的无涯，当然也可能显露在生活和文字里。——三毛',
+    '多数人愿意承认自己懒，而不承认自己蠢。所以，说自己比别人更聪明是非常危险的，说自己比别人更努力，更苦哈哈就安全得多。——王兴',
+    '虽然每个人都有「顶天」和「立地」两种选择；但能「顶天」之人，毕竟是少数；绝大部分人将「立地」！若你没特别的理论研究天赋，不能成为「顶天」的科学家，那就建议你老老实实瞄准「立地」的工程师。社会并不急需「既能做一些不痛不痒的项目，又能发表几篇不三不四的论文」的所谓通才，强劲的社会竞争力是检验学生培养是否成功的唯一标准。——北京邮电大学杨义先教授',
+    '真正的幸福，并不是得到你极力追求的东西，而是那些你习以为常，直到你失去，才追悔莫及的东西。',
+    '生活不单指是鸡毛蒜皮的小事。',
+    '人到了一定岁数，自己就是自己的屋檐，再也无法找到其他地方避雨了。',
+    '我的第一个阶段，以为努力真的很重要，直到我遇到了一个不错的平台，我的第二个阶段以为平台很重要，直到我遇到了一个不错的机会。',
+    'They always say time changes things, but you actually have to change them yourself.—Andy Warhol, The Philosophy of Andy Warhol',
+    "Yesterday is but today's memory, tomorrow is today's dream.—Kahlil Gibran",
+    '我不如很多人，当然，很多人也不如我。大风刮倒梧桐树，自有旁人论长短，你所见皆是我，好与坏我都不反驳，我做好我的，你过好你的，你不用理解我，咋各有各的路。——《所见的我》',
+    '天下熙熙皆为利来，天下攘攘皆为利往；能不为利所驱、心有所栖者，寥寥。——司马迁《史记·货殖列传》',
+    # 节二：落日归山海，山海藏深意
+    '星光满载，初心不改；',
+    '入目无人，四下皆是你；',
+    '飞鸟与鱼不同路，山水相识仅相逢。',
+    '独木难成林，寡林不成森。',
+    '远处有风，远处有景，远处有你；',
+    '山野万里，你是我藏在微风中的欢喜。',
+    '她穿裙子站你旁边你看不见，后来她穿裙子站在人海你看到了。',
+    '他朝若是同淋雪，此生也算共白头。',
+    '行至朝雾里，坠入暮云间，与星辉一同为你沉迷。',
+    '日落尤其温柔，人间皆是浪漫。',
+    '太阳不是突然落山，热爱和期待也是。',
+    '世间所有的相遇，都是久别重逢。',
+    '落日归山海，山海藏深意。',
+    '你真可爱，我好喜欢你。',
+    '我与春风皆过客，你携秋水揽星河。',
+    '曾经沧海难为水，除却巫山不是云。——元稹《离思五首》其四',
+    '终有弱水替沧海，再无相思寄巫山；',
+    '终有弱水替沧海，再把相思寄巫山；',
+    '当初所爱隔山海，山海皆可平。——littlesen《无题》',
+    '当初所爱隔山海，山海不可平。——littlesen《无题》',
+    '陪你看日落的人，比日落本身更温柔。',
+    '日出于东却落于西，相识人海却散于席。',
+    '晓看天色暮看云，行也思君，坐也思君。——唐寅《一剪梅·雨打梨花深闭门》',
+    '坐错车和错过车哪个更难过？因为坐错车而错过车最难过。',
+    '不结婚是一个人的孤单，娶错人是两个人的「乱战」，孤单不可怕，可怕的是枕边人让你孤单。',
+    '一本书重新读一遍也许会有不一样的感悟，但是它不会有新的结局，就像我和你一样。',
+    '分享的乐趣在于回应，失去分享的欲望，便是散场的开始。',
+    '此后山水不相逢，莫道彼此长和短。',
+    '傍晚的阳光金黄而辽远，四季交替却如此温情，你迟到了许多年，可我依然为你的到来而高兴。',
+    '是你慷慨，赠我岁月如歌；却也吝啬，看我爱而不得。',
+    '草在结它的种子，风在摇它的叶子。我们站着，不说话，就十分美好。——顾城《门前》',
+    '约着见一面，就能使见面的前后几天都沾着光，变成好日子。——钱钟书《围城》',
+    '娉娉袅袅十三余，豆蔻梢头二月初。春风十里扬州路，卷上连珠总不如。——杜牧《赠别二首》其一',
+    '人生若只如初见，何事秋风悲画扇？等闲变却故人心，却道故人心易变。——纳兰性德《木兰花令·拟古决绝词柬友》',
+    '如果只有一点点喜欢你，我想我应该不会给你说。因为我知道，人生，当你太孤独太久，会有太多的冲动；',
+    '祝愿，他的余生：遇良人，被喜欢，遇贵人，被欣赏。',
+    '我一生都是坚定不移的唯物主义者，唯有你，我希望有来生。——周恩来',
+    '繁星之所以美丽，是因为一朵遥远不可见的花。——《小王子》',
+    '假如你下午四点钟来，那么从三点钟起我就开始感到高兴。——《小王子》',
+    '因为有了人海，相遇才会显得那么意外。',
+    'This love between you and me is simple as a song.—Rabindranath Tagore, The Gardener',
+    '「被人记住」是一件值得写在日记第一行的事情。',
+    '我告诉你我喜欢你，并不是一定要和你在一起，只是希望以后的你，在遭遇人生低谷的时候，不要灰心，至少曾经有人被你的魅力所吸引，曾经是，以后也会是。——村上春树',
+    # 节三：人生如逆旅，你我皆行人
+    '可怜身上衣正单，心忧炭贱愿天寒。——白居易《卖炭翁》',
+    '可怜身上衣已湿，心忧花贱愿天热。',
+    '他乡成故乡，故乡成远方。',
+    '人生如逆旅，你我皆行人。——苏轼《临江仙·送钱穆父》',
+    '年年有人18，但只有一年是属于自己的18。',
+    '岁月偷走了我的青春，我却把岁月挂在了脸上。',
+    '老朋友不知道新生活，新朋友不知道旧脾气。',
+    '但是老朋友知道你的旧脾气，新朋友知道你的新生活。',
+    '我与岁月一样，身在其中，我与岁月一样，言不由衷。',
+    '日落跌进迢迢星野，人间忽晚，山河已秋。',
+    '生活明朗，万物可爱，人间值得，未来可期。',
+    '哪晓岁月蹉跎过，依然名利两无收。',
+    '祝你所求皆所愿，所行化坦途，多喜乐，长安宁。',
+    '祝我们都好，不止夏天。',
+    '论迹不论心，论心无完人。——《朱子语类》',
+    '花有重开日，人无再少年。——陈著《续侄溥赏酴醾劝酒二首》',
+    '生活匆忙，别错过日落和夕阳。',
+    '热爱可抵漫长岁月。',
+    '山外青山楼外楼，西湖歌舞几时休。——林升《题临安邸》',
+    '纵有疾风起，人生不言弃。',
+    '这世上除了自己，都是别人。',
+    '把无能为力的事情都放下，你会快乐很多。',
+    '曾以为走不出的日子，现在都回不去了。——村上春树《挪威的森林》',
+    '我每天努力的工作，至今碌碌无为（其实也没有多努力）。',
+    '回首向来萧瑟处，归去，也无风雨也无晴。——苏轼《定风波》',
+    '前路浩浩荡荡，万事皆可期待。',
+    '书到用时方恨少，事非经过不知难。——《增广贤文》',
+    '承蒙时光不弃，又长大了一岁。',
+    '我见青山多妩媚，青山见我应如是。——辛弃疾《贺新郎·甚矣吾衰矣》',
+    '不知他人苦，莫劝他人善。',
+    '其实你没那么多观众，不妨大胆一点去生活。',
+    '一个人在外奋斗，一个人追求自己的理想，终究是太孤单。',
+    '人生哪能多如意，万事只求半称心。',
+    '君子和而不同。——《论语·子路》',
+    '事事半称心，终究意难平。',
+    '不以物喜，不以己悲。——范仲淹《岳阳楼记》',
+    '人间小满胜万全。',
+    # 随想
+    '你朋友圈那条裙子挺好看的，我想请她吃个饭，你要是有时间也可以一起来。',
+    '我要是有你这么好的身材，我洗澡都在阳台上洗。',
+    '能叫我一声宝宝么，反正你的嘴闲着也是闲着。',
+    '你是我见一个爱一个里面最爱的一个。',
+    '我希望能得到你的联系方式，最好可以给我你的地址以便于我登门拜谢！',
+    '我好想去找你啊，可我又不敢，因为我怕给你脸了，你又装逼。',
+    '学会了一句拒绝人的话：要不这样，你就当我死了吧。',
+    '反正你没对象，让你当我对象怎么了？我一天捡200个矿泉水瓶子难不成我还会饿着你？',
+    '你凶我，我愣了一下，连你埋哪我都想好了。',
+    '山高路远，总有人为我而来。但来的人可能都摔死了。',
+    '买杯奶茶出来，共享单车都不见了，在这座城市，连共享单车都守不住了，还怎么守的住爱情。',
+    '20岁的我全款迈凯伦，没用父母一分钱，判了八年。',
+    '朋友圈设最近三天可见，是因为我不敢保证每张照片p的一样。',
+    '爱上做饭了，喜欢那种认真备料，精心调配，煎炒烹炸后做出一坨屎的感觉，就像我的人生。',
+    '最近手很疼去看了医生，医生说这是手机玩多了，需要男孩子的手牵一牵才能好。',
+    '大哥很想你，但大哥不说，大哥希望你对号入座！',
+    '为什么不喜欢我，因为我是小学生吗。',
+    '上帝是公平的，给了你丑的外表，一定也会给你低的智商，以免让你显得不协调。',
+    '今天的风好像会说话，它对我说：「头给你拧掉。」',
+    '如果国家给情商分等级的话，你大概可以享受低保了。',
+    '找个胖的女朋友不好吗？花同样的钱，你挑了个最大的！',
+    '结婚挺好，不结婚的人，人生再绚烂，说白了也不过是一个人孤独的等死。结婚就不一样了，结婚不是一个人等死，是互相盼着对方死。岁月磨平了我们的棱角，模糊了我们的形状，于是我们从形形色色的人，变成了色色的人。',
+    '继贾玲导演第一部电影《你好，李焕英》破50亿后，第二部《你好，处对象吗》已经开始筹备，诚邀女主角，报名方式：点击左上角头像，发送：我要跟你处对象。',
+    '我这个人疑心病特别重，别人一旦不回我消息，我就觉得他可能死了。',
+    '有时候会莫名有这样一种感受：虽然人生才刚过二十几年，但已经感觉就这样了。这种感觉就像刮刮乐，刮到一个「谢」字。',
+    '别的女孩子穿背带裤。你说她天真可爱。我穿背带裤，你问我去哪里捞鱼？',
+    '小时候总喜欢把不开心写在脸上，长大了就不一样了，写不下了。',
+    '跟奥特曼分手了，他说他要去拯救世界了，原来我不是他的世界。做我男朋友吧，一个月给你十万，两个月给你换辆车，三个月给你换套房，实在不行我再喝点，把整个河北送给你。',
+    '你好我是奥特曼现在受伤了，需要一个人类男孩子的吻才能痊愈，还有你相信光吗？',
+    '我最近怎么总是梦到你，昨晚又做梦，梦到你丢了，我满世界发了疯似的找你找遍了各个房间，找到一把m4，吃鸡吗？',
+    '闺蜜问我喜欢多高的男生，我觉得男孩子起码得53米吧，得像奥特曼一样我才有安全感。',
+    '如果我16岁，我可以陪你疯，陪你玩，再谈几年没有结果的恋爱，可惜我今年60了，我得回家哄孙子了。',
+    '是你浪费在我身上的时间，使我，变得如此珍贵。——《小王子》',
+    '世界充满分岐，所以要学会尊重别人。',
+    '你可以讨厌某种东西，但你必须允许它的存在和别人喜欢它。',
+    '我们都各自发光，不必去吹灭别人的灯。',
+    '应该是从喜欢里得到力量和快乐，而不是花光了力量和快乐去喜欢。',
+    '夸奖的话你可以脱口而出，诋毁的话你要三思而后行。',
+    '你可以不漂亮，也可以不爱打扮，甚至可以很胖。你可以不优秀，可以不上进，甚至可以不聪明。但，我不可以。',
+    '当浑浊成为常态，清白就是罪。',
+    '真希望，以后我暴富了，我女朋友背个几十块的帆布包，别人都还猜这个包得多少钱。——狗哥',
+    '网恋受过伤，下乡插过秧，为爱跳过鸭绿江，等两个小姐姐抚平我所有的创伤，别问为什么要两个，伤的重。',
+    '你们说我长得好看，我可以忍，但是别说我朋友，这件事情跟他们没有关系。',
+    '你羡慕我，一身潇洒，无牵无挂，我却羡慕你，有家，有他，有人，等你回家。',
+    '昨晚喝多了特别想你，酒醒了发现，好像和喝多了没关系。',
+    '大海很好看，但船得靠岸。',
+    '你说你喜欢海，所以我浪到了现在。',
+    '虚惊一场，空欢喜一场。',
+    '其实雨也没很大，只是风搞得很紧张。',
+    '「其实我很想再见你一面，只是我过得不太体面。」',
+    '纵使意难平，也勿薄情寡义。',
+    '我吃完了一个五斤的西瓜，也没等到回复我的信息，我想，这应该不是你不够喜欢我，而是这西瓜不够大。',
+    '不知道从什么时候开始对你小心翼翼说话了，我记得我以前挺嚣张的。',
+    '曾经我也是四块五的妞儿，后来，他以为我只值四块五。',
+    '少年时的一日与青年时的一日，时间的长度是不同的。',
+    '我不漂亮，我是芸芸众生中最普通的张三，李四，起风了我就挡风，下雨了我就打伞，没伞我就淋雨。',
+)
+
+def _line_width(draw: ImageDraw.ImageDraw, text: str, font) -> int:
+    if not text:
+        return 0
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0]
+
+
+def _wrap_paragraph_to_width(
+    draw: ImageDraw.ImageDraw,
+    font,
+    paragraph: str,
+    max_width: int,
+) -> list[str]:
+    paragraph = paragraph.strip()
+    if not paragraph:
+        return []
+    if _line_width(draw, paragraph, font) <= max_width:
+        return [paragraph]
+    lines: list[str] = []
+    i = 0
+    n = len(paragraph)
+    while i < n:
+        lo, hi = i + 1, n + 1
+        best = i + 1
+        while lo <= n:
+            chunk = paragraph[i:lo]
+            if _line_width(draw, chunk, font) <= max_width:
+                best = lo
+                lo += 1
+            else:
+                break
+        j = best
+        if j <= i:
+            j = i + 1
+        if j < n:
+            limit = max(i + 1, j - 14)
+            k = j
+            while k > limit and paragraph[k - 1] not in _SOFT_BREAK_AFTER:
+                k -= 1
+            if k > i:
+                j = k
+        line = paragraph[i:j].strip()
+        if line:
+            while line and line[0] in _NO_LINE_START:
+                line = line[1:].lstrip()
+            if line:
+                lines.append(line)
+        i = j
+    return lines
+
+
+def _layout_gallery_lines(
+    draw: ImageDraw.ImageDraw,
+    font,
+    text: str,
+    max_width: int,
+) -> list[str | None]:
+    """Returns lines; None marks extra gap between paragraphs (source \\n)."""
+    raw = text.strip()
+    if not raw:
+        return []
+    paragraphs = [p.strip() for p in raw.split("\n")]
+    out: list[str | None] = []
+    first = True
+    for para in paragraphs:
+        if not para:
+            continue
+        if not first:
+            out.append(None)
+        first = False
+        out.extend(_wrap_paragraph_to_width(draw, font, para, max_width))
+    return out
+
+
+def _gallery_total_height(
+    lines_spec: list[str | None], line_h: int, paragraph_gap: int
+) -> int:
+    h = 0
+    for item in lines_spec:
+        if item is None:
+            h += paragraph_gap
+        else:
+            h += line_h
+    return h
+
+
+class MiscGalleryTemplate(WallTemplate):
+    """Each render shows one random entry from `_MISC_QUOTES` (unless `templateParams.text` is set)."""
+
+    display_name = "杂锦摘句"
+
+    def render(self, ctx: RenderContext) -> Image.Image:
+        from renderers.templates.daily_motto import _load_cjk_font
+
+        base = dict(ctx.scene.template_params or {})
+        raw = base.get("text")
+        if raw is None or not str(raw).strip():
+            text = random.choice(_MISC_QUOTES)
+        else:
+            text = str(raw).strip()
+
+        w = ctx.device_profile.get("width", 800)
+        h = ctx.device_profile.get("height", 600)
+        scale = min(w, h) / 600
+        margin_x = max(28, int(w * 0.075))
+        margin_y = max(36, int(h * 0.055))
+        inner_h = h - 2 * margin_y
+        max_width = w - 2 * margin_x
+
+        img = Image.new("RGB", (w, h), color=(248, 246, 240))
+        draw = ImageDraw.Draw(img)
+        fill = (38, 42, 48)
+
+        size_px = max(22, int(30 * scale))
+        min_px = max(18, int(17 * scale))
+        lines_spec: list[str | None] = []
+        line_h = 0
+        paragraph_gap = 0
+
+        while size_px >= min_px:
+            font = _load_cjk_font(size_px)
+            line_h = int(size_px * 1.48)
+            paragraph_gap = max(6, int(size_px * 0.38))
+            lines_spec = _layout_gallery_lines(draw, font, text, max_width)
+            n_lines = sum(1 for x in lines_spec if x is not None)
+            n_breaks = sum(1 for x in lines_spec if x is None)
+            total = _gallery_total_height(lines_spec, line_h, paragraph_gap)
+            if n_lines <= 32 and total <= inner_h:
+                break
+            size_px -= 2
+
+        total_block = _gallery_total_height(lines_spec, line_h, paragraph_gap)
+        y0 = margin_y + max(0, (inner_h - total_block) // 2)
+        y = y0
+        for item in lines_spec:
+            if item is None:
+                y += paragraph_gap
+                continue
+            ln = item[:500]
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            tw = bbox[2] - bbox[0]
+            x = max(margin_x, (w - tw) // 2)
+            draw.text((x, y), ln, fill=fill, font=font)
+            y += line_h
+
+        return img
