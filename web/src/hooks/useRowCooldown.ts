@@ -6,7 +6,7 @@ export function useRowCooldown(cooldownMs: number) {
 
   const withCooldown = useCallback(
     (id: string, action: () => void) => {
-      if (busyRef.current === id) return
+      if (busyRef.current != null) return
       busyRef.current = id
       setBusyId(id)
       action()
@@ -20,5 +20,20 @@ export function useRowCooldown(cooldownMs: number) {
     [cooldownMs]
   )
 
-  return { busyId, withCooldown }
+  /** 上屏等长任务：在 Promise 结束前保持 busy，避免与 withCooldown 650ms 冲突。 */
+  const withBusyAsync = useCallback(async (id: string, fn: () => Promise<void>) => {
+    if (busyRef.current != null) return
+    busyRef.current = id
+    setBusyId(id)
+    try {
+      await fn()
+    } finally {
+      if (busyRef.current === id) {
+        busyRef.current = null
+        setBusyId(null)
+      }
+    }
+  }, [])
+
+  return { busyId, withCooldown, withBusyAsync }
 }

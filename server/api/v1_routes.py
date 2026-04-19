@@ -5,7 +5,9 @@ import logging
 import re
 
 from flask import Blueprint, current_app, jsonify, request, send_file
+from pydantic import ValidationError
 
+from api.validation_errors import scene_validation_error_response
 from domain.models import AppConfig, Scene
 from storage.stores import load_config, save_config
 
@@ -66,8 +68,8 @@ def create_scene():
 
     try:
         new_scene = Scene.model_validate(raw)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    except ValidationError as e:
+        return jsonify(scene_validation_error_response(e)), 400
         
     if any(s.id == new_scene.id for s in cfg.scenes):
         return jsonify({"error": "scene id already exists"}), 409
@@ -98,8 +100,8 @@ def put_scene(scene_id: str):
     raw = request.get_json(force=True, silent=False)
     try:
         new = Scene.model_validate(raw)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    except ValidationError as e:
+        return jsonify(scene_validation_error_response(e)), 400
     if new.id != scene_id:
         return jsonify({"error": "id mismatch"}), 400
     idx = next((i for i, s in enumerate(cfg.scenes) if s.id == scene_id), None)

@@ -1,11 +1,13 @@
+import { Loader2 } from "lucide-react"
 import { memo } from "react"
 
 import { PreviewFrame } from "@/components/preview/PreviewFrame"
 import type { FrameDisplayConfig } from "@/data/frame-config"
+import type { PreviewSrcRole } from "@/lib/preview-src-role"
 import type { Scene } from "@/types/api"
 import { cn } from "@/lib/utils"
 
-export type PreviewSrcRole = "hero" | "thumb"
+export type { PreviewSrcRole }
 
 export const WallPreviewSection = memo(function WallPreviewSection({
   nowOnWall,
@@ -13,6 +15,8 @@ export const WallPreviewSection = memo(function WallPreviewSection({
   frameConfig,
   previewSrc,
   previewFilter,
+  wallPreviewBusy = false,
+  wallBusyLabel = "正在上屏…",
 }: {
   nowOnWall: Scene | null
   /** 用于无障碍与标题：插件 displayName 或用户自定义名 */
@@ -20,6 +24,8 @@ export const WallPreviewSection = memo(function WallPreviewSection({
   frameConfig: FrameDisplayConfig
   previewSrc: (s: Scene, role?: PreviewSrcRole) => string
   previewFilter: string
+  wallPreviewBusy?: boolean
+  wallBusyLabel?: string
 }) {
   const heroAlt = nowOnWall
     ? nowOnWallLabel?.trim() || nowOnWall.name.trim() || nowOnWall.templateId
@@ -50,12 +56,29 @@ export const WallPreviewSection = memo(function WallPreviewSection({
                       "relative isolate aspect-[4/3] h-[min(34vh,288px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 [contain:paint]",
                       "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
                     )}
+                    aria-busy={wallPreviewBusy}
+                    aria-label={wallPreviewBusy ? wallBusyLabel : undefined}
                   >
                     <PreviewFrame
                       src={previewSrc(nowOnWall, "hero")}
                       alt={`${heroAlt} 当前画面预览`}
                       imageFilter={previewFilter}
+                      useViewTransition={false}
+                      preloadRetry
                     />
+                    {wallPreviewBusy ? (
+                      <div
+                        className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-slate-950/40 px-4 text-center backdrop-blur-[2px]"
+                        aria-hidden
+                      >
+                        <Loader2
+                          className="h-9 w-9 animate-spin text-white/95"
+                          strokeWidth={1.75}
+                          aria-hidden
+                        />
+                        <p className="text-[13px] font-medium text-white/95">{wallBusyLabel}</p>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div
@@ -63,12 +86,29 @@ export const WallPreviewSection = memo(function WallPreviewSection({
                       "relative isolate aspect-[3/4] h-[min(46vh,380px)] w-auto max-w-full overflow-hidden rounded-[length:var(--radius-surface)] bg-slate-800/45 [contain:paint] sm:h-[min(44vh,360px)]",
                       "shadow-[0_0_0_1px_rgb(255_255_255/0.14),0_2px_6px_rgb(0_0_0/0.16),0_18px_48px_-22px_rgb(0_0_0/0.34),0_44px_112px_-50px_rgb(0_0_0/0.52),inset_0_1px_1px_rgb(255_255_255/0.12),inset_0_12px_40px_rgb(0_0_0/0.18)]"
                     )}
+                    aria-busy={wallPreviewBusy}
+                    aria-label={wallPreviewBusy ? wallBusyLabel : undefined}
                   >
                     <PreviewFrame
                       src={previewSrc(nowOnWall, "hero")}
                       alt={`${heroAlt} 当前画面预览`}
                       imageFilter={previewFilter}
+                      useViewTransition={false}
+                      preloadRetry
                     />
+                    {wallPreviewBusy ? (
+                      <div
+                        className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-slate-950/40 px-4 text-center backdrop-blur-[2px]"
+                        aria-hidden
+                      >
+                        <Loader2
+                          className="h-9 w-9 animate-spin text-white/95"
+                          strokeWidth={1.75}
+                          aria-hidden
+                        />
+                        <p className="text-[13px] font-medium text-white/95">{wallBusyLabel}</p>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>

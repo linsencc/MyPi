@@ -37,6 +37,7 @@ export default function App() {
     previewSrc,
     templatePreviewSrc,
     previewFilter,
+    wallPreviewBusy,
     editDialogOpen,
     frameDialogOpen,
     setFrameDialogOpen,
@@ -45,6 +46,7 @@ export default function App() {
     rowBusyId,
     showToast,
     openEdit,
+    runShowNow,
     runShowNowTemplate,
     handleEditDialogOpenChange,
     commitFrameDialog,
@@ -136,10 +138,11 @@ export default function App() {
             frameConfig={frameConfig}
             previewSrc={previewSrc}
             previewFilter={previewFilter}
+            wallPreviewBusy={wallPreviewBusy}
           />
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-start lg:gap-5">
-            <div className="min-w-0 max-w-full overflow-x-auto">
+            <div className="min-w-0 w-full max-w-full">
             <WallRunsTimeline
               runs={wallRuns}
               upcoming={wallState?.upcoming ?? []}
@@ -166,6 +169,8 @@ export default function App() {
                 onToggle={handleSceneToggle}
                 onEdit={openEdit}
                 onDelete={handleSceneDelete}
+                onShowNow={runShowNow}
+                sceneBusySceneId={rowBusyId}
               />
             </section>
           </div>
@@ -175,9 +180,8 @@ export default function App() {
 
             <ul className="grid select-none grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10.25rem,1fr))] sm:gap-3">
               {templates.map((t) => {
-                const firstScene = scenes.find((s) => s.templateId === t.templateId)
-                const isBusy = firstScene ? rowBusyId === firstScene.id : false
-                
+                const isBusy = rowBusyId === t.templateId
+
                 return (
                   <TemplateCard
                     key={t.templateId}

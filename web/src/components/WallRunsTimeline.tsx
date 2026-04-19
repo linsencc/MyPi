@@ -102,12 +102,13 @@ function dotClass(kind: DotKind, ok: boolean, queuedBehindDisplay: boolean): str
 const TIMELINE_ROW_MIN_H = "min-h-[2.75rem]"
 const TIMELINE_SIX_ROWS_MIN_H = "min-h-[16.5rem]"
 const TIMELINE_VIEWPORT_H = "h-[min(17.75rem,45vh)]"
-/** 第三列不用 1fr，避免在宽屏上占满整行导致右侧大片空白仍落在 overflow 区域内抢手势 */
-/** 中间列放圆点；与左右列之间用 gap-x-3（见行上 class）统一间距 */
+/** 圆点列含 ring 需略宽；左右各 1fr 对称，节点水平居中 */
+const TIMELINE_DOT_COL = "2rem" as const
 const TIMELINE_GRID_COLS =
-  "8rem 1.75rem minmax(0, min(15rem, 60vw))" as const
-/** 8rem + column-gap(0.75rem) + 轴线列一半(0.875rem)，与 gap-x-3 同步 */
-const TIMELINE_AXIS_CENTER_LEFT = "calc(8rem + 0.75rem + 0.875rem)" as const
+  `minmax(0, 1fr) ${TIMELINE_DOT_COL} minmax(0, 1fr)` as const
+/** 与 list 同级的轴层：父级有 pr-* 时 50% 会相对整盒宽度，须减右内边距的一半才对齐 ol 内容区中心 */
+const TIMELINE_AXIS_LEFT_CLASS =
+  "left-[calc(50%-0.25rem)] sm:left-[calc(50%-0.375rem)] lg:left-[calc(50%-0.5rem)]"
 
 /** 与 `.timeline-viewport-mask` 上下渐隐带大致对齐（约 0.85rem） */
 const TIMELINE_VIEWPORT_MASK_INSET_PX = 14
@@ -174,8 +175,8 @@ const TimelineRowItem = memo(
         <time
           dateTime={iso}
           className={cn(
-            "inline-flex flex-col items-end gap-px text-right tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
-            "min-w-0 pr-1 text-[13px] leading-snug tracking-tight sm:text-[14px]",
+            "inline-flex min-w-0 flex-col items-start gap-px text-left tabular-nums sm:flex-row sm:items-baseline sm:gap-x-1 sm:whitespace-nowrap",
+            "shrink-0 justify-self-start text-[13px] leading-snug tracking-tight sm:text-[14px]",
             kind === "playing"
               ? "text-slate-600"
               : kind === "upcoming"
@@ -250,7 +251,8 @@ const TimelineRowItem = memo(
         </div>
         <span
           className={cn(
-            "min-w-0 truncate pl-0 text-[14px] leading-snug sm:text-[15px]",
+            "min-w-0 pl-0 text-[14px] leading-snug sm:text-[15px]",
+            "line-clamp-2 break-keep",
             kind === "playing"
               ? "font-medium text-slate-900"
               : kind === "upcoming"
@@ -540,25 +542,27 @@ export function WallRunsTimeline({
           <div
             ref={scrollRef}
             className={cn(
-              "timeline-scroll-hide timeline-viewport-mask relative w-max min-w-0 max-w-full touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
+              "timeline-scroll-hide timeline-viewport-mask relative w-full min-w-0 max-w-full touch-pan-y overflow-y-auto overscroll-y-contain pb-2 pl-4 pr-3 pt-5 [contain:layout_paint]",
               TIMELINE_VIEWPORT_H
             )}
           >
             <div
-              className="relative w-max min-w-0 max-w-full pr-12 lg:pr-16"
+              className="relative w-full min-w-0 max-w-full pr-2 sm:pr-3 lg:pr-4"
               ref={listContainerRef}
             >
               <div
                 aria-hidden
-                className="timeline-axis-line pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2"
+                className={cn(
+                  "timeline-axis-line pointer-events-none absolute inset-y-0 z-0 w-px -translate-x-1/2",
+                  TIMELINE_AXIS_LEFT_CLASS
+                )}
                 style={{
-                  left: TIMELINE_AXIS_CENTER_LEFT,
                   background: axisLineBackground,
                 }}
               />
               <ol
                 className={cn(
-                  "relative z-[1] m-0 w-max min-w-0 max-w-full list-none pb-1",
+                  "relative z-[1] m-0 w-full min-w-0 max-w-full list-none pb-1",
                   TIMELINE_SIX_ROWS_MIN_H
                 )}
               >

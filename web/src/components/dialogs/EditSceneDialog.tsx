@@ -3,6 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { editDialogFieldClass, editDialogLabelClass } from "@/app/edit-dialog-styles"
 import { IntervalUnitSelect } from "@/components/IntervalUnitSelect"
 import { ScheduleTimePicker } from "@/components/ScheduleTimePicker"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -58,6 +68,7 @@ export function EditSceneDialog({
 
   const [name, setName] = useState("")
   const [saving, setSaving] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const [formRefreshMode, setFormRefreshMode] = useState<RefreshMode>("interval")
   const [formIntervalValue, setFormIntervalValue] = useState(5)
@@ -66,6 +77,10 @@ export function EditSceneDialog({
   const [formWeekdays, setFormWeekdays] = useState<number[]>(() => [...WEEKDAY_PRESETS.daily])
 
   const lastSyncedId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!open) setDeleteDialogOpen(false)
+  }, [open])
 
   useEffect(() => {
     if (!open || !scene) {
@@ -157,15 +172,33 @@ export function EditSceneDialog({
     }
   }, [scene, saving, buildSceneFromForm, onSave, onOpenChange])
 
-  const handleDelete = () => {
+  const confirmDelete = () => {
     if (!scene || !onDelete) return
-    if (!window.confirm(`确定删除「${pluginDisplayName}」？`)) return
     onDelete(scene.id)
+    setDeleteDialogOpen(false)
     onOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除场景？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除「{pluginDisplayName}」及其调度配置，此操作无法撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">取消</AlertDialogCancel>
+            <AlertDialogAction type="button" onClick={confirmDelete}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={editDialogContentRef}
         className={dialogShell(
@@ -180,7 +213,7 @@ export function EditSceneDialog({
               </DialogTitle>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-[min(20rem,calc(100vw-3rem))] break-words">
-              {scene?.id ? "编辑画框模板" : "配置并创建新场景"}
+              {scene?.id ? "编辑场景（名称、调度与参数）" : "配置并创建新场景"}
             </TooltipContent>
           </Tooltip>
         </DialogHeader>
@@ -361,7 +394,7 @@ export function EditSceneDialog({
                 type="button"
                 variant="ghost"
                 className="h-10 rounded-lg px-3 text-[13px] font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
-                onClick={handleDelete}
+                onClick={() => setDeleteDialogOpen(true)}
               >
                 删除场景
               </Button>
@@ -390,5 +423,6 @@ export function EditSceneDialog({
         </div>
       </DialogContent>
     </Dialog>
+    </>
   )
 }

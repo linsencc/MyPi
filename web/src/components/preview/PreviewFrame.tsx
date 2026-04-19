@@ -9,53 +9,74 @@ export const PreviewFrame = memo(function PreviewFrame({
   alt,
   imageFilter,
   lightweight = false,
+  useViewTransition = true,
+  preloadRetry = false,
 }: {
   src: string
   alt: string
   imageFilter: string
   lightweight?: boolean
+  /** 主预览关闭 View Transition，避免偶发过渡空白帧 */
+  useViewTransition?: boolean
+  /** PNG 刚落盘时可能短暂 404，预加载失败则带参重试一次 */
+  preloadRetry?: boolean
 }) {
   const [broken, setBroken] = useState(false)
   const [displaySrc, setDisplaySrc] = useState(src)
   const [previousSrc, setPreviousSrc] = useState<string | null>(null)
-  
+
   useEffect(() => {
     setBroken(false)
-    
+
     if (src === displaySrc) return
     let isCancelled = false
-    
-    const img = new Image()
-    img.src = src
-    img.onload = () => {
-      if (isCancelled) return
-      
-      const update = () => {
-        setPreviousSrc(displaySrc)
-        setDisplaySrc(src)
+    let retried = false
+
+    const tryLoad = (url: string) => {
+      const img = new Image()
+      img.src = url
+      img.onload = () => {
+        if (isCancelled) return
+
+        const update = () => {
+          setPreviousSrc(displaySrc)
+          setDisplaySrc(url)
+        }
+
+        if (useViewTransition && document.startViewTransition) {
+          // @ts-ignore View Transitions API
+          document.startViewTransition(update)
+        } else {
+          update()
+        }
       }
-      
-      // @ts-ignore View Transitions API might not be in all TS definitions
-      if (document.startViewTransition) {
-        // @ts-ignore
-        document.startViewTransition(update)
-      } else {
-        update()
+      img.onerror = () => {
+        if (isCancelled) return
+        if (
+          preloadRetry &&
+          !retried &&
+          !url.startsWith("data:") &&
+          !url.includes("_preloadRetry=1")
+        ) {
+          retried = true
+          const sep = url.includes("?") ? "&" : "?"
+          tryLoad(`${url}${sep}_preloadRetry=1`)
+          return
+        }
+        setDisplaySrc(url)
       }
     }
-    img.onerror = () => {
-      if (isCancelled) return
-      setDisplaySrc(src)
-    }
-    
+
+    tryLoad(src)
+
     return () => {
       isCancelled = true
     }
-  }, [src, displaySrc])
-  
+  }, [src, displaySrc, preloadRetry, useViewTransition])
+
   const useCssFilter =
     !lightweight && Boolean(imageFilter) && !isDataImagePlaceholder(displaySrc)
-  
+
   if (broken) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-200/90 text-center text-[13px] text-slate-500">
@@ -65,11 +86,13 @@ export const PreviewFrame = memo(function PreviewFrame({
     )
   }
 
-  const containerStyle = previousSrc ? {
-    backgroundImage: `url(${previousSrc})`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  } : undefined
+  const containerStyle = previousSrc
+    ? {
+        backgroundImage: `url(${previousSrc})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
+    : undefined
 
   return (
     <div className="absolute inset-0 h-full w-full overflow-hidden" style={containerStyle}>
@@ -82,7 +105,7 @@ export const PreviewFrame = memo(function PreviewFrame({
         className={cn(
           "absolute inset-0 h-full w-full object-cover object-center select-none",
           "[-webkit-user-drag:none]",
-          previousSrc && "animate-preview-fade-in"
+          previousSrc && useViewTransition && "animate-preview-fade-in"
         )}
         style={useCssFilter ? { filter: imageFilter } : undefined}
         loading={lightweight ? "lazy" : "eager"}

@@ -1,5 +1,16 @@
-import { Pencil, Power, Trash2 } from "lucide-react"
+import { Pencil, Play, Power, Trash2 } from "lucide-react"
+import { useState } from "react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import type { Scene, TemplateMeta } from "@/types/api"
 import { scheduleToFormState } from "@/lib/apply-scene-schedule"
@@ -33,9 +44,9 @@ function sceneListPrimaryAndHint(
   return { primary: stored, showHint: true, hint: label }
 }
 
-/** 与时间轴行首列 8rem 对齐；中为调度说明；末为操作 */
+/** 与时间轴行首列 10.75rem 对齐；中为调度说明；末为操作（含立即上屏） */
 const GRID_COLS =
-  "[grid-template-columns:8rem_minmax(0,1fr)_6.5rem]" as const
+  "[grid-template-columns:10.75rem_minmax(0,1fr)_8.5rem]" as const
 
 /** 与 WallRunsTimeline 行高一致 */
 const SCENE_ROW_MIN_H = "min-h-[2.75rem]"
@@ -48,14 +59,20 @@ export function SceneList({
   onToggle,
   onEdit,
   onDelete,
+  onShowNow,
+  sceneBusySceneId,
 }: {
   scenes: Scene[]
   templates: TemplateMeta[]
   onToggle: (scene: Scene, enabled: boolean) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
+  onShowNow?: (scene: Scene) => void
+  /** 与 useWallSession.rowBusyId 对齐：上屏进行中时禁用该场景按钮 */
+  sceneBusySceneId?: string | null
 }) {
   const tMap = Object.fromEntries(templates.map((t) => [t.templateId, t]))
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
 
   if (scenes.length === 0) {
     return (
@@ -69,6 +86,36 @@ export function SceneList({
 
   return (
     <div className="select-none">
+      <AlertDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除场景？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `将永久删除「${deleteTarget.label}」及其调度配置，此操作无法撤销。`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">取消</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              onClick={() => {
+                if (deleteTarget) onDelete(deleteTarget.id)
+                setDeleteTarget(null)
+              }}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <ul className="m-0 list-none p-0">
         {scenes.map((s) => {
           const t = tMap[s.templateId]
@@ -107,7 +154,7 @@ export function SceneList({
                   {describeSchedule(s)}
                 </p>
 
-                <div className="flex shrink-0 items-center justify-end gap-1 pl-2">
+                <div className="flex shrink-0 items-center justify-end gap-0.5 pl-2 sm:gap-1">
                   <Button
                     type="button"
                     variant="ghost"
@@ -124,6 +171,20 @@ export function SceneList({
                   >
                     <Power className="h-3 w-3" strokeWidth={ICON_STROKE} />
                   </Button>
+                  {onShowNow && s.enabled ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                      disabled={sceneBusySceneId === s.id}
+                      aria-label={`立即上屏「${primary}」`}
+                      aria-busy={sceneBusySceneId === s.id}
+                      onClick={() => onShowNow(s)}
+                    >
+                      <Play className="h-3 w-3" strokeWidth={ICON_STROKE} />
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
@@ -139,11 +200,7 @@ export function SceneList({
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => {
-                      if (window.confirm(`确定删除场景「${primary}」？`)) {
-                        onDelete(s.id)
-                      }
-                    }}
+                    onClick={() => setDeleteTarget({ id: s.id, label: primary })}
                     aria-label={`删除「${primary}」`}
                   >
                     <Trash2 className="h-3 w-3" strokeWidth={ICON_STROKE} />

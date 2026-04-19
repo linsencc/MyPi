@@ -16,15 +16,28 @@ import {
 import { getPreviewImageFilter, type FrameDisplayConfig } from "@/data/frame-config"
 import { frameConfigToTuning, parseFrameTuning } from "@/lib/frame-tuning-sync"
 import { useRowCooldown } from "@/hooks/useRowCooldown"
-import { 
-  getFallbackPlaceholder, 
-  isUsableImageRef, 
-  pickLatestOutputUrlForScene, 
-  pickLatestOutputUrlForTemplate 
+import type { PreviewSrcRole } from "@/lib/preview-src-role"
+import {
+  getFallbackPlaceholder,
+  isUsableImageRef,
+  pickLatestOutputUrlForScene,
+  pickLatestOutputUrlForTemplate,
 } from "@/lib/preview-resolve"
+import { waitForWallPreview } from "@/lib/wall-render-wait"
 import type { AppConfig, Scene, TemplateMeta, WallRun, WallState } from "@/types/api"
 
 const ROW_COOLDOWN_MS = 650
+
+function withPreviewCacheBust(url: string, bust: number): string {
+  if (!bust || url.startsWith("data:")) return url
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}v=${bust}`
+}
+
+function sceneIsQueuedForDisplay(ws: WallState | null, sceneId: string): boolean {
+  if (!ws?.queuedDisplaySceneIds?.length) return false
+  return ws.queuedDisplaySceneIds.includes(sceneId)
+}
 
 export function useWallSession() {
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -40,7 +53,11 @@ export function useWallSession() {
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
-  const { busyId: rowBusyId, withCooldown } = useRowCooldown(ROW_COOLDOWN_MS)
+  const [burstGen, setBurstGen] = useState(0)
+  const [previewBust, setPreviewBust] = useState(0)
+  const lastPreviewUrlRef = useRef<string | null>(null)
+
+  const { busyId: rowBusyId, withBusyAsync } = useRowCooldown(ROW_COOLDOWN_MS)
   const refreshSeqRef = useRef(0)
 
   const showToast = useCallback((msg: string) => {
@@ -111,6 +128,25 @@ export function useWallSession() {
     return () => clearInterval(id)
   }, [refresh])
 
+  /** 上屏后约 15s 内每 2s 刷新，避免长时间等待 8s 轮询才更新时间轴 */
+  useEffect(() => {
+    if (burstGen === 0) return
+    const id = setInterval(() => void refresh(), 2000)
+    const stop = setTimeout(() => setBurstGen(0), 15_000)
+    return () => {
+      clearInterval(id)
+      clearTimeout(stop)
+    }
+  }, [burstGen, refresh])
+
+  useEffect(() => {
+    const u = wallState?.currentPreviewUrl?.trim() ?? ""
+    if (u && u !== lastPreviewUrlRef.current) {
+      lastPreviewUrlRef.current = u
+      setPreviewBust((b) => b + 1)
+    }
+  }, [wallState?.currentPreviewUrl])
+
   const scenes = config?.scenes ?? []
 
   const frameConfig = useMemo(
@@ -122,8 +158,7 @@ export function useWallSession() {
     if (!wallState?.currentSceneId) return null
     const found = scenes.find((s) => s.id === wallState.currentSceneId)
     if (found) return found
-    
-    // Fallback for ephemeral/deleted scenes
+
     return {
       id: wallState.currentSceneId,
       name: wallState.currentSceneName ?? wallState.currentSceneId,
@@ -155,53 +190,71 @@ export function useWallSession() {
 
   const previewFilter = useMemo(() => getPreviewImageFilter(frameConfig.imageSettings), [frameConfig])
 
+  const wallPreviewBusy = useMemo(() => {
+    if (rowBusyId != null) return true
+    if (wallState?.displayActiveSceneId) return true
+    return false
+  }, [rowBusyId, wallState?.displayActiveSceneId])
+
   const previewSrc = useCallback(
-    (scene: Scene) => {
-      // 1. Current on wall
-      if (wallState?.currentSceneId === scene.id) {
+    (scene: Scene, role?: PreviewSrcRole) => {
+      const isHero = role === "hero"
+      const onWall = wallState?.currentSceneId === scene.id
+
+      if (isHero && onWall) {
+        const renderingThis =
+          wallState.displayActiveSceneId === scene.id || sceneIsQueuedForDisplay(wallState, scene.id)
         const u = wallState.currentPreviewUrl
-        if (isUsableImageRef(u)) return u!.trim()
+
+        if (renderingThis && isUsableImageRef(u)) {
+          return withPreviewCacheBust(u!.trim(), previewBust)
+        }
+        if (renderingThis) {
+          return getFallbackPlaceholder("正在上屏…")
+        }
+        if (isUsableImageRef(u)) {
+          return withPreviewCacheBust(u!.trim(), previewBust)
+        }
+        return getFallbackPlaceholder("等待 Pi 预览")
       }
-      // 2. Persistent preview URL
+
+      if (onWall) {
+        const u = wallState?.currentPreviewUrl
+        if (isUsableImageRef(u)) return withPreviewCacheBust(u!.trim(), previewBust)
+      }
       if (isUsableImageRef(scene.previewImageUrl)) return scene.previewImageUrl!.trim()
-      // 3. Latest output run for this scene
       const latestRunOutput = pickLatestOutputUrlForScene(wallRuns, scene.id)
       if (latestRunOutput) return latestRunOutput
-      // 4. Fallback placeholder
       return getFallbackPlaceholder(scene.name || scene.templateId)
     },
-    [wallState, wallRuns]
+    [wallState, wallRuns, previewBust]
   )
 
   const templatePreviewSrc = useCallback(
     (templateId: string, displayTitle: string) => {
-      // 1. If this template is currently on the wall (e.g. via ephemeral run)
       if (wallState?.currentTemplateId === templateId) {
         const u = wallState.currentPreviewUrl
-        if (isUsableImageRef(u)) return u!.trim()
+        if (isUsableImageRef(u)) return withPreviewCacheBust(u!.trim(), previewBust)
       }
-      
-      // 2. Pick the first configured scene for this template and check its persistent preview
+
       const firstScene = scenes.find((s) => s.templateId === templateId)
       if (firstScene && isUsableImageRef(firstScene.previewImageUrl)) {
         return firstScene.previewImageUrl!.trim()
       }
-      
-      // 3. Latest output run for this template
+
       const latestRunOutput = pickLatestOutputUrlForTemplate(wallRuns, templateId)
       if (latestRunOutput) return latestRunOutput
-      
-      // 4. Fallback placeholder
+
       return getFallbackPlaceholder(displayTitle)
     },
-    [wallState, scenes, wallRuns]
+    [wallState, scenes, wallRuns, previewBust]
   )
 
   const editingScene = useMemo(() => {
     if (editingId) return scenes.find((s) => s.id === editingId) ?? null
     if (pendingTemplateId) {
       return {
-        id: "", // No ID yet
+        id: "",
         name: "",
         description: "",
         enabled: true,
@@ -251,18 +304,15 @@ export function useWallSession() {
     [config, refresh, showToast]
   )
 
-  const handleSceneCreate = useCallback(
-    (templateId: string) => {
-      setPendingTemplateId(templateId)
-      setEditingId(null)
-      setEditDialogOpen(true)
-    },
-    []
-  )
+  const handleSceneCreate = useCallback((templateId: string) => {
+    setPendingTemplateId(templateId)
+    setEditingId(null)
+    setEditDialogOpen(true)
+  }, [])
 
   const handleSceneDelete = useCallback(
     async (id: string) => {
-      if (!id) return // New scene
+      if (!id) return
       try {
         await deleteScene(id)
         setConfig((c) =>
@@ -285,7 +335,7 @@ export function useWallSession() {
 
   const handleSceneToggle = useCallback(
     async (scene: Scene, enabled: boolean) => {
-      if (!scene.id) return // Should not happen for toggle
+      if (!scene.id) return
       const next = { ...scene, enabled }
       try {
         const saved = await putScene(next.id, next)
@@ -328,47 +378,64 @@ export function useWallSession() {
     [refresh, showToast]
   )
 
+  const startWallPushBurst = useCallback(() => {
+    setBurstGen((g) => g + 1)
+  }, [])
+
   const runShowNow = useCallback(
     (scene: Scene) => {
-      withCooldown(scene.id, () => {
-        void (async () => {
-          try {
-            const sn = await showNow(scene.id)
-            if (sn.wallState) setWallState(sn.wallState)
-            showToast(`已上墙：${sceneNames[scene.id] ?? scene.templateId}`)
-            await refresh()
-          } catch (e) {
-            const msg =
-              e instanceof ApiError
-                ? e.status === 400
-                  ? "场景已禁用或未找到"
-                  : e.message
+      void withBusyAsync(scene.id, async () => {
+        showToast("正在上屏…")
+        startWallPushBurst()
+        try {
+          const sn = await showNow(scene.id)
+          if (sn.wallState) setWallState(sn.wallState)
+          const ws = await waitForWallPreview(
+            { type: "scene", sceneId: scene.id },
+            { onTick: (w) => setWallState(w) }
+          )
+          setWallState(ws)
+          showToast(`已上墙：${sceneNames[scene.id] ?? scene.templateId}`)
+          await refresh()
+        } catch (e) {
+          const msg =
+            e instanceof ApiError
+              ? e.status === 400
+                ? "场景已禁用或未找到"
+                : e.message
+              : e instanceof Error
+                ? e.message
                 : "请求失败"
-            showToast(msg)
-          }
-        })()
+          showToast(msg)
+        }
       })
     },
-    [refresh, sceneNames, showToast, withCooldown]
+    [refresh, sceneNames, showToast, startWallPushBurst, withBusyAsync]
   )
 
   const runShowNowTemplate = useCallback(
     (templateId: string) => {
-      withCooldown(templateId, () => {
-        void (async () => {
-          try {
-            const sn = await showNowTemplate(templateId)
-            if (sn.wallState) setWallState(sn.wallState)
-            showToast(`模板已上墙：${templateId}`)
-            await refresh()
-          } catch (e) {
-            const msg = e instanceof ApiError ? e.message : "请求失败"
-            showToast(msg)
-          }
-        })()
+      void withBusyAsync(templateId, async () => {
+        showToast("正在上屏…")
+        startWallPushBurst()
+        try {
+          const sn = await showNowTemplate(templateId)
+          if (sn.wallState) setWallState(sn.wallState)
+          const ws = await waitForWallPreview(
+            { type: "template", templateId },
+            { onTick: (w) => setWallState(w) }
+          )
+          setWallState(ws)
+          showToast(`已上墙：${templateId}`)
+          await refresh()
+        } catch (e) {
+          const msg =
+            e instanceof ApiError ? e.message : e instanceof Error ? e.message : "请求失败"
+          showToast(msg)
+        }
       })
     },
-    [refresh, showToast, withCooldown]
+    [refresh, showToast, startWallPushBurst, withBusyAsync]
   )
 
   return {
@@ -387,6 +454,7 @@ export function useWallSession() {
     previewSrc,
     templatePreviewSrc,
     previewFilter,
+    wallPreviewBusy,
     editDialogOpen,
     frameDialogOpen,
     setFrameDialogOpen,
