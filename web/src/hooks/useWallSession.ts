@@ -13,7 +13,11 @@ import {
   showNow,
   showNowTemplate,
 } from "@/api/client"
-import { getPreviewImageFilter, type FrameDisplayConfig } from "@/data/frame-config"
+import {
+  getPreviewImageFilter,
+  isPipelineOutputPreviewUrl,
+  type FrameDisplayConfig,
+} from "@/data/frame-config"
 import { frameConfigToTuning, parseFrameTuning } from "@/lib/frame-tuning-sync"
 import { useRowCooldown } from "@/hooks/useRowCooldown"
 import type { PreviewSrcRole } from "@/lib/preview-src-role"
@@ -188,8 +192,6 @@ export function useWallSession() {
     return { id: wallState.currentSceneId, name }
   }, [wallState?.currentSceneId, sceneNames])
 
-  const previewFilter = useMemo(() => getPreviewImageFilter(frameConfig.imageSettings), [frameConfig])
-
   const wallPreviewBusy = useMemo(() => {
     if (rowBusyId != null) return true
     if (wallState?.displayActiveSceneId) return true
@@ -229,6 +231,15 @@ export function useWallSession() {
     },
     [wallState, wallRuns, previewBust]
   )
+
+  /** 与 Pi 落盘一致：已处理的 output PNG 不再套浏览器滤镜，避免双重校对。 */
+  const previewFilter = useMemo(() => {
+    const ink = getPreviewImageFilter(frameConfig.imageSettings)
+    if (!nowOnWall) return ink
+    const src = previewSrc(nowOnWall, "hero")
+    if (isPipelineOutputPreviewUrl(src)) return ""
+    return ink
+  }, [frameConfig.imageSettings, nowOnWall, previewSrc])
 
   const templatePreviewSrc = useCallback(
     (templateId: string, displayTitle: string) => {

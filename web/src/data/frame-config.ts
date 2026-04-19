@@ -26,12 +26,13 @@ export interface FrameDisplayConfig {
   timelineMaxEvents?: number
 }
 
+/** 默认针对 Waveshare 13.3″ 全彩墨水平板：较 LCD 略发灰，适度提饱和/对比与略锐化。 */
 export const INKYPI_IMAGE_DEFAULTS: InkypiImageSettings = {
-  saturation: 1.0,
-  contrast: 1.0,
-  sharpness: 1.0,
+  saturation: 1.15,
+  contrast: 1.1,
+  sharpness: 1.05,
   brightness: 1.0,
-  inky_saturation: 0.5,
+  inky_saturation: 0.6,
 }
 
 export const DEFAULT_FRAME_CONFIG: FrameDisplayConfig = {
@@ -58,7 +59,7 @@ export const INKYPI_SLIDER_SPECS: {
     min: 0,
     max: 2,
     step: 0.05,
-    defaultValue: 1.0,
+    defaultValue: 1.15,
   },
   {
     key: "contrast",
@@ -67,7 +68,7 @@ export const INKYPI_SLIDER_SPECS: {
     min: 0.5,
     max: 2,
     step: 0.05,
-    defaultValue: 1.0,
+    defaultValue: 1.1,
   },
   {
     key: "sharpness",
@@ -76,7 +77,7 @@ export const INKYPI_SLIDER_SPECS: {
     min: 0,
     max: 2,
     step: 0.05,
-    defaultValue: 1.0,
+    defaultValue: 1.05,
   },
   {
     key: "brightness",
@@ -90,11 +91,11 @@ export const INKYPI_SLIDER_SPECS: {
   {
     key: "inky_saturation",
     label: "Inky 驱动饱和",
-    hint: "对应 InkyPi「Inky Driver Saturation」· 下发 set_image",
+    hint: "对应 InkyPi「Inky Driver Saturation」· 在 MyPi 中与饱和度一并参与落盘与上屏",
     min: 0,
     max: 1,
     step: 0.05,
-    defaultValue: 0.5,
+    defaultValue: 0.6,
   },
 ]
 
@@ -161,4 +162,10 @@ export function getPreviewImageFilter(s: InkypiImageSettings): string {
   const contrastBoost = c * (1 + Math.max(0, sharp - 1) * 0.15) * (0.88 + ink * 0.28)
   const sat = Math.max(0.55, col * (0.75 + ink * 0.5))
   return `brightness(${b}) contrast(${contrastBoost}) saturate(${sat})`
+}
+
+/** Wall pipeline PNG under `/api/v1/output/` is already tuned server-side; skip duplicate CSS filter. */
+export function isPipelineOutputPreviewUrl(url: string | null | undefined): boolean {
+  if (!url || url.startsWith("data:")) return false
+  return url.includes("/api/v1/output/")
 }

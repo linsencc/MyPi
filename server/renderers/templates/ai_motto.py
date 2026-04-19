@@ -21,6 +21,8 @@ Environment variables:
                                   URL pinterest.com/…/wallpaper/ → id from Pinterest API or site JSON, not the slug alone.
   MYPI_MOTTO_FETCH_MAX_SIDE    – Max long edge when downloading (default: 2400; matches frame aspect)
   MYPI_MOTTO_COLOR_BOOST       – PIL Color enhance on the photo layer (default: 1.15 for color e-ink). Set 1.0 to disable.
+  MYPI_MOTTO_FONT              – Optional path to .ttf/.otf/.ttc for the quote (literary title font).
+  MYPI_MOTTO_FONT_BOLD         – Optional path to a bolder face for the quote; if unset, stroke is used on MYPI_MOTTO_FONT or default CJK.
   MYPI_MOTTO_IMAGE_NO_PROXY      – if 1/true: Pinterest/image HTTP without proxy (LLM may still use proxy)
 """
 from __future__ import annotations
@@ -38,8 +40,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageStat
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageStat
 
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.cjk_font import _load_cjk_font, _wrap_lines
@@ -61,7 +64,14 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
 
     严格要求：
     - 只输出上述 JSON，不加任何其他内容、标签或解释
-    - motto: 质朴有深度的中文寄语，40 字以内，不说空话套话，不打招呼
+    - motto（核心）：要有**具体来历或质感**，避免空洞鸡汤与万能句（少用「愿你」「加油」「不负韶华」等套话）。
+      优先从下列**类型中选一类**完成（每次一类即可，不要杂糅）：
+      * 中外文学名著、作家语录的**短摘**（可带书名，六字内简称即可）
+      * 经典**影视/动画台词**（**必须**用《片名》标注来源；避免总是同一大热片）
+      * **诗词、古文**一句（可带作者；勿堆砌生僻字）
+      * 历史人物、思想家、科学家等**真实语录**（带人名）
+      * 近现代杂文、随笔中的**锐利短句**（可带作者）
+      若用翻译句，读感要像中文书面语；总长度 **36 字以内**，不打招呼、不写日期。
     - image_prompt: 英文检索用语，用于匹配**全彩「风景壁纸」风**配图（竖屏画框全幅背景 + 底部叠字），与寄语意境相合。
       整体气质参考 Pinterest 上常见的 **scenery wallpaper / desktop wallpaper art** 类收藏：
       * **偏插画与氛围**：水彩/数字绘景、吉卜力式开阔自然、海边小镇、花田、阳台望远、林荫街景等**无人物主体**的风景；
@@ -76,19 +86,76 @@ _USER_PROMPT = (
     "请给我今天的一句寄语，以及相配的全彩「风景壁纸风」英文检索用语（偏插画/氛围壁纸，与桌面风景壁纸审美相近）。"
 )
 
+# 轮换「侧重」，降低连续几天内容雷同（与 system 中的类型呼应）。
+_MOTTO_FOCUS_ROTATION: tuple[str, ...] = (
+    "本次请优先：文学摘句或作家金句，可带简称书名。",
+    "本次请优先：影视或动画台词，务必带《片名》，勿与常见鸡汤混同。",
+    "本次请优先：古诗词或古文一句，可带作者。",
+    "本次请优先：哲学家、科学家、史学家等人物短语录，带人名。",
+    "本次请优先：近现代杂文、随笔中的句子，带作者。",
+    "本次请优先：外国文学汉译名句，可带译者或书名。",
+)
+
 # ── Fallbacks ───────────────────────────────────────────────────────
 _FALLBACK_MESSAGES = (
-    "你已经走了很远，别忘了今天也值得好好过。",
-    "世间的事，慢慢来，终会有个着落。",
-    "心若清净，处处都是道场。",
-    "把眼前的事做好，未来自然清晰。",
-    "所有走散的，终会以另一种方式归来。",
+    "人生如逆旅，我亦是行人。——苏轼",
+    "世上只有一种英雄主义，就是在认清生活真相之后依然热爱生活。——罗曼·罗兰",
+    "一个人知道自己为什么而活，就可以忍受任何一种生活。——尼采",
+    "我来到这个世界上，为了看看太阳和蓝色的地平线。——巴尔蒙特",
+    "路漫漫其修远兮，吾将上下而求索。——屈原",
+    "生活不可能像你想象得那么好，但也不会像你想象得那么糟。——莫泊桑",
 )
 
 
 def _get_fallback() -> str:
     i = datetime.now().timetuple().tm_yday % len(_FALLBACK_MESSAGES)
     return _FALLBACK_MESSAGES[i]
+
+
+# Quote typography: optional env paths, else try common bold CJK, else regular CJK + stroke.
+_MOTTO_BOLD_CANDIDATES: tuple[tuple[Path, int], ...] = (
+    (Path(r"C:\Windows\Fonts\msyhbd.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"), 0),
+)
+
+
+def _try_truetype(path: Path, size: int, index: int = 0) -> ImageFont.FreeTypeFont | None:
+    if not path.is_file():
+        return None
+    try:
+        if path.suffix.lower() == ".ttc":
+            return ImageFont.truetype(str(path), size=size, index=index)
+        return ImageFont.truetype(str(path), size=size)
+    except OSError:
+        return None
+
+
+def _load_motto_quote_font(size: int) -> tuple[ImageFont.FreeTypeFont, bool]:
+    """Return (font, has_natural_bold). If False, draw with stroke for legibility on photos."""
+    b = os.environ.get("MYPI_MOTTO_FONT_BOLD", "").strip()
+    if b:
+        f = _try_truetype(Path(b), size)
+        if f is not None:
+            return f, True
+    m = os.environ.get("MYPI_MOTTO_FONT", "").strip()
+    if m:
+        f = _try_truetype(Path(m), size)
+        if f is not None:
+            return f, False
+    for p, idx in _MOTTO_BOLD_CANDIDATES:
+        f = _try_truetype(p, size, index=idx)
+        if f is not None:
+            return f, True
+    return _load_cjk_font(size), False
+
+
+def _motto_focus_line() -> str:
+    """Daily-rotating emphasis so LLM output does not cluster on one source type."""
+    now = datetime.now()
+    i = (now.timetuple().tm_yday * 7 + now.month * 3 + now.weekday()) % len(_MOTTO_FOCUS_ROTATION)
+    return _MOTTO_FOCUS_ROTATION[i]
 
 
 def _strip_thinking(text: str) -> str | None:
@@ -168,11 +235,12 @@ def _call_llm() -> tuple[str, str | None]:
     model = os.environ.get("MYPI_LLM_MODEL", _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
     timeout = int(os.environ.get("MYPI_LLM_TIMEOUT", str(_DEFAULT_TIMEOUT)))
 
+    user_content = f"{_USER_PROMPT}\n\n{_motto_focus_line()}"
     payload = json.dumps({
         "model": model,
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": _USER_PROMPT},
+            {"role": "user", "content": user_content},
         ],
         "max_tokens": 400,
         "temperature": 0.9,
@@ -601,6 +669,10 @@ _SECONDARY_COLOR = (110, 105, 98)
 _SUBTLE_COLOR = (150, 145, 138)
 _ACCENT_COLOR = (85, 80, 72)
 _DIVIDER_COLOR = (200, 196, 188)
+# Full-bleed overlay: warm paper + dark stroke for readability on bright skies.
+_QUOTE_FILL_ART = (252, 250, 245)
+_QUOTE_STROKE_ART = (28, 30, 36)
+_QUOTE_SHADOW_ART = (42, 40, 38)
 
 
 def _infer_fetch_size(canvas_w: int, canvas_h: int) -> tuple[int, int]:
@@ -712,8 +784,8 @@ def _compose(
 
         # Text sits in the opaque zone (lower ~28%)
         text_zone_center = int(canvas_h * 0.76)
-        size_px = max(24, int(34 * scale))
-        font = _load_cjk_font(size_px)
+        size_px = max(26, int(36 * scale))
+        font, quote_bold = _load_motto_quote_font(size_px)
         raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.05)))
         n = len(motto)
         if n <= raw_max:
@@ -723,20 +795,34 @@ def _compose(
         else:
             max_chars = raw_max
         lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
-        line_h = int(size_px * 1.55)
+        line_h = int(size_px * 1.52)
         block_h = len(lines) * line_h
         y0 = text_zone_center - block_h // 2
 
         shadow_off = max(1, int(1.5 * scale))
-        shadow_color = (180, 178, 174)
+        stroke_w = 0 if quote_bold else max(1, int(1.8 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
             tx = (canvas_w - tw) // 2
             ty = y0 + k * line_h
-            draw.text((tx + shadow_off, ty + shadow_off), ln,
-                      fill=shadow_color, font=font)
-            draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
+            if quote_bold:
+                draw.text(
+                    (tx + shadow_off, ty + shadow_off),
+                    ln,
+                    fill=_QUOTE_SHADOW_ART,
+                    font=font,
+                )
+                draw.text((tx, ty), ln, fill=_QUOTE_FILL_ART, font=font)
+            else:
+                draw.text(
+                    (tx, ty),
+                    ln,
+                    fill=_QUOTE_FILL_ART,
+                    font=font,
+                    stroke_width=stroke_w,
+                    stroke_fill=_QUOTE_STROKE_ART,
+                )
 
         # Footer: date + attribution
         footer_y = canvas_h - int(28 * scale)
@@ -763,18 +849,24 @@ def _compose(
         )
 
         size_px = max(30, int(42 * scale))
-        font = _load_cjk_font(size_px)
+        font, quote_bold = _load_motto_quote_font(size_px)
         max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.05)))
         lines = _wrap_lines(motto, max_chars=max_chars, max_lines=4)
-        line_h = int(size_px * 1.6)
+        line_h = int(size_px * 1.58)
         block_h = len(lines) * line_h
         y0 = bar_y + bar_h + int(24 * scale)
 
+        tw_off = max(1, int(1.2 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
-            draw.text(((canvas_w - tw) // 2, y0 + k * line_h), ln,
-                      fill=_TEXT_COLOR, font=font)
+            tx = (canvas_w - tw) // 2
+            ty = y0 + k * line_h
+            if quote_bold:
+                draw.text((tx + tw_off, ty + tw_off), ln, fill=(220, 218, 214), font=font)
+                draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
+            else:
+                draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
 
         text_bottom = y0 + block_h
         div_y = text_bottom + int(22 * scale)

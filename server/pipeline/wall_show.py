@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import time
 import logging
@@ -7,6 +7,7 @@ from pathlib import Path
 
 from domain.models import Scene, WallRun
 from display.sink import DisplaySink
+from pipeline.frame_tune import apply_frame_tuning
 from renderers.template_base import RenderContext, SceneSlice
 from renderers.registry import TemplateRegistry
 from storage.paths import run_output_dir
@@ -57,7 +58,8 @@ class WallPipeline:
             
             # The template now returns a PIL.Image.Image directly
             img = template.render(ctx)
-            
+            img = apply_frame_tuning(img, dict(frame_tuning or {}))
+
             # Pipeline takes over saving the image
             out_path = out_dir / f"{scene.id}_{run_id}.png"
             t_save = time.perf_counter()

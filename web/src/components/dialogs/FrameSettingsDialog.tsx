@@ -1,4 +1,3 @@
-import { CircleHelp } from "lucide-react"
 import { type CSSProperties, useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -10,11 +9,6 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   INKYPI_IMAGE_DEFAULTS,
   INKYPI_SLIDER_SPECS,
   type FrameDisplayConfig,
@@ -22,6 +16,11 @@ import {
 } from "@/data/frame-config"
 import { dialogShell } from "@/lib/dialog-shell"
 import { cn } from "@/lib/utils"
+
+/** 与 INKYPI_SLIDER_SPECS 顺序一致，供说明与滑块对照 */
+const INK_RECOMMENDED_NUMBERS_LINE = INKYPI_SLIDER_SPECS.map((s) =>
+  s.defaultValue.toFixed(2),
+).join(" / ")
 
 export function FrameSettingsDialog({
   open,
@@ -37,7 +36,6 @@ export function FrameSettingsDialog({
   const [draft, setDraft] = useState<FrameDisplayConfig>(() => ({
     orientation: committedConfig.orientation,
     imageSettings: { ...committedConfig.imageSettings },
-    timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
   }))
 
   useEffect(() => {
@@ -45,7 +43,6 @@ export function FrameSettingsDialog({
     setDraft({
       orientation: committedConfig.orientation,
       imageSettings: { ...committedConfig.imageSettings },
-      timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
     })
   }, [open])
 
@@ -69,7 +66,7 @@ export function FrameSettingsDialog({
     onCommit({
       orientation: draft.orientation,
       imageSettings: { ...draft.imageSettings },
-      timelineMaxEvents: draft.timelineMaxEvents,
+      timelineMaxEvents: committedConfig.timelineMaxEvents ?? 30,
     })
   }
 
@@ -124,31 +121,22 @@ export function FrameSettingsDialog({
               <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                 水墨屏色彩校对
               </h3>
+              <p className="text-[12px] leading-relaxed text-slate-500">
+                <span className="font-medium text-slate-600">建议设置值</span>
+                ：
+                <span className="font-mono tabular-nums text-slate-700"> {INK_RECOMMENDED_NUMBERS_LINE} </span>
+                （饱和→对比→锐度→亮度→驱动）。保存后与树莓派同步，用于落盘、上屏与主预览。
+              </p>
               <ul className="space-y-5">
                 {INKYPI_SLIDER_SPECS.map((spec) => {
                   const v = draft.imageSettings[spec.key]
                   const isDefault = Math.abs(v - spec.defaultValue) < 1e-6
-                  const techTip = `${spec.hint} · 默认 ${spec.defaultValue.toFixed(2)}`
                   return (
                     <li key={spec.key} className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Label htmlFor={`ink-slider-${spec.key}`} className="text-[13px] font-semibold text-slate-800">
                           {spec.label}
                         </Label>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex shrink-0 rounded-md text-slate-300 transition-colors hover:bg-slate-100/80 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
-                              aria-label={`${spec.label}：技术说明与默认值`}
-                            >
-                              <CircleHelp className="h-3 w-3" strokeWidth={1.75} aria-hidden />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[16rem]">
-                            {techTip}
-                          </TooltipContent>
-                        </Tooltip>
                       </div>
                       <div className="flex items-center gap-3">
                         <input
@@ -179,21 +167,14 @@ export function FrameSettingsDialog({
                               {v.toFixed(2)}
                             </span>
                           ) : (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  aria-label={`${spec.label} 恢复为默认 ${spec.defaultValue.toFixed(2)}`}
-                                  className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-                                  onClick={() => resetSlider(spec.key)}
-                                >
-                                  {v.toFixed(2)}
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                点击恢复默认 {spec.defaultValue.toFixed(2)}
-                              </TooltipContent>
-                            </Tooltip>
+                            <button
+                              type="button"
+                              aria-label={`${spec.label} 恢复为默认 ${spec.defaultValue.toFixed(2)}`}
+                              className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
+                              onClick={() => resetSlider(spec.key)}
+                            >
+                              {v.toFixed(2)}
+                            </button>
                           )}
                         </div>
                       </div>
@@ -201,80 +182,6 @@ export function FrameSettingsDialog({
                   )
                 })}
               </ul>
-            </section>
-
-            <section className="space-y-3 border-t border-slate-100 pt-4">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                时间轴设置
-              </h3>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="timeline-max-events" className="text-[13px] font-semibold text-slate-800">
-                    最大展示条数
-                  </Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex shrink-0 rounded-md text-slate-300 transition-colors hover:bg-slate-100/80 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/30"
-                        aria-label="时间轴最大展示条数：默认 30"
-                      >
-                        <CircleHelp className="h-3 w-3" strokeWidth={1.75} aria-hidden />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[16rem]">
-                      限制时间轴最多展示的记录条数，避免记录过多导致加载慢或滚动困难 · 默认 30
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    id="timeline-max-events"
-                    type="range"
-                    min={10}
-                    max={100}
-                    step={10}
-                    value={draft.timelineMaxEvents ?? 30}
-                    aria-valuetext={`最大展示 ${draft.timelineMaxEvents ?? 30} 条`}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({
-                        ...d,
-                        timelineMaxEvents: n,
-                      }))
-                    }}
-                    className="ink-range-slider min-w-0 flex-1"
-                    style={
-                      {
-                        "--ink-pct": `${(((draft.timelineMaxEvents ?? 30) - 10) / 90) * 100}%`,
-                      } as CSSProperties
-                    }
-                  />
-                  <div className="flex min-w-[2.75rem] shrink-0 items-center justify-end tabular-nums">
-                    {(draft.timelineMaxEvents ?? 30) === 30 ? (
-                      <span className="w-full text-right font-mono text-[12px] text-slate-500">
-                        30
-                      </span>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={`恢复为默认 30`}
-                            className="w-full rounded-md px-1 py-0.5 text-right font-mono text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/35"
-                            onClick={() => setDraft(d => ({ ...d, timelineMaxEvents: 30 }))}
-                          >
-                            {draft.timelineMaxEvents ?? 30}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left">
-                          点击恢复默认 30
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </div>
-              </div>
             </section>
           </div>
         </div>
