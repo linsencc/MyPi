@@ -1,7 +1,6 @@
-"""每日寄语 wall template: LLM → remote art (Pinterest / pinscrape) → compose_motto.
+"""每日寄语 wall template: LLM → Pinscrape art (or offline) → compose_motto.
 
-Env vars: see module docstrings in ``llm.py`` (LLM), ``images.py`` (Pinterest / pinscrape / fallbacks),
-``net.py`` (proxy), ``compose.py`` (fonts / scrim).
+Env vars: see ``llm.py`` (LLM), ``images.py`` (Pinscrape / offline), ``net.py`` (proxy), ``compose.py`` (fonts / scrim).
 """
 from __future__ import annotations
 

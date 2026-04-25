@@ -11,11 +11,16 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from renderers.templates.ai_motto.images import pinterest_access_token  # noqa: E402
+
+def _pinterest_access_token() -> str:
+    return (
+        os.environ.get("MYPI_PINTEREST_ACCESS_TOKEN", "").strip()
+        or os.environ.get("PINTEREST_ACCESS_TOKEN", "").strip()
+    )
 
 
 def main() -> int:
-    token = pinterest_access_token()
+    token = _pinterest_access_token()
     if not token:
         print("MYPI_PINTEREST_ACCESS_TOKEN / PINTEREST_ACCESS_TOKEN: MISSING")
         return 2

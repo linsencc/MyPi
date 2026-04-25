@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke-test Pinterest fetch for ai_motto (run on Pi with same env as mypi.service)."""
+"""Smoke-test Pinscrape fetch for ai_motto (run on Pi with same env as mypi.service)."""
 
 from __future__ import annotations
 
@@ -9,25 +9,21 @@ import sys
 # Repo root: server/scripts -> parent is server
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from renderers.templates.ai_motto.images import (  # noqa: E402
-    fetch_pinterest_motto_image,
-    pinterest_access_token,
-)
+from renderers.templates.ai_motto.images import fetch_web_motto_image  # noqa: E402
 
 
 def main() -> int:
-    tok = pinterest_access_token()
-    if not tok:
-        print("PINTEREST_TOKEN: MISSING (set MYPI_PINTEREST_ACCESS_TOKEN or PINTEREST_ACCESS_TOKEN)")
+    flag = os.environ.get("MYPI_MOTTO_PINSCRAPE", "").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        print("MYPI_MOTTO_PINSCRAPE is off; enable pinscrape for this smoke test.")
         return 2
-    print("PINTEREST_TOKEN: set (length %d)" % len(tok))
     prompt = (
         "watercolor mountain lake autumn forest scenic wallpaper "
         "colorful soft golden light painterly aesthetic landscape"
     )
-    im = fetch_pinterest_motto_image(prompt, "verify_pinterest_motto")
+    im = fetch_web_motto_image(prompt, 800, 600, "verify_pinscrape_motto")
     if im is None:
-        print("FETCH: failed (no image after Pinterest attempts)")
+        print("FETCH: failed (pinscrape returned no image; check proxy / pip install pinscrape)")
         return 1
     print("FETCH: ok mode=%s size=%sx%s" % (im.mode, im.width, im.height))
     return 0
