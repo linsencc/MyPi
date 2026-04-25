@@ -9,6 +9,16 @@ from PIL import Image, ImageDraw
 
 from renderers.template_base import RenderContext, WallTemplate
 
+# Paper + chrome (warm editorial look; subtle enough for e-ink).
+_BG_TOP_RGB = (247, 244, 238)
+_BG_BOTTOM_RGB = (254, 252, 248)
+_NOISE_BLEND = 0.052
+_FRAME_OUTER_RGB = (188, 182, 174)
+_FRAME_INNER_RGB = (228, 223, 216)
+_HEADER_RGB = (118, 116, 110)
+_RULE_RGB = (210, 204, 196)
+_FOOTER_ORNAMENT_RGB = (176, 172, 166)
+
 # Prefer breaking lines after these (CJK typography); includes ASCII quotes for English.
 _SOFT_BREAK_AFTER: frozenset[str] = frozenset(
     list(" \t，、；：。！？!?,.;:「」『』（）()[]【】—…") + ['"', "'"]
@@ -21,7 +31,7 @@ _IDEAL_HANZI_COLUMNS = 32
 _LINE_HEIGHT_FACTOR = 1.58
 _PARAGRAPH_GAP_FACTOR = 0.44
 _MEASURE_PROBE = "永"
-_BG_RGB = (252, 250, 245)
+_BG_RGB = (252, 250, 245)  # fallback flat fill if gradient builder fails
 _FG_RGB = (44, 46, 52)
 _VERTICAL_BIAS = 0.42
 
@@ -325,6 +335,140 @@ def _line_height_from_font(draw: ImageDraw.ImageDraw, font, size_px: int) -> int
     return max(int(core * _LINE_HEIGHT_FACTOR), int(size_px * 1.42))
 
 
+def _misc_gallery_paper_background(w: int, h: int) -> Image.Image:
+    """Soft vertical gradient + light film grain (PIL-only)."""
+    w, h = max(1, w), max(1, h)
+    grad_l = (
+        Image.linear_gradient("L")
+        .resize((1, h), Image.Resampling.BILINEAR)
+        .transpose(Image.ROTATE_90)
+        .resize((w, h), Image.Resampling.BILINEAR)
+    )
+    top = Image.new("RGB", (w, h), _BG_TOP_RGB)
+    bottom = Image.new("RGB", (w, h), _BG_BOTTOM_RGB)
+    base = Image.composite(bottom, top, grad_l)
+    nw = max(96, min(256, w // 3))
+    nh = max(96, min(256, h // 3))
+    try:
+        noise_l = Image.effect_noise((nw, nh), 14).resize(
+            (w, h), Image.Resampling.BILINEAR
+        )
+    except (AttributeError, ValueError, OSError):
+        return base
+    n_rgb = Image.merge("RGB", (noise_l, noise_l, noise_l))
+    return Image.blend(base, n_rgb, _NOISE_BLEND)
+
+
+def _misc_gallery_chrome_heights(h: int, scale: float) -> tuple[int, int]:
+    """Reserved vertical space for masthead (px) and footer band (px)."""
+    s = max(0.75, float(scale))
+    header = max(50, int(58 * s))
+    footer = max(24, int(30 * s))
+    return header, footer
+
+
+def _draw_misc_gallery_frame(
+    draw: ImageDraw.ImageDraw,
+    w: int,
+    h: int,
+    scale: float,
+    *,
+    frame_inset: int,
+) -> None:
+    s = max(0.75, float(scale))
+    stroke = max(1, int(round(1.15 * s)))
+    rad = max(10, int(16 * s))
+    inset = frame_inset
+    outer = [inset, inset, w - 1 - inset, h - 1 - inset]
+    inner_pad = max(4, int(5 * s))
+    inner = [
+        inset + inner_pad,
+        inset + inner_pad,
+        w - 1 - inset - inner_pad,
+        h - 1 - inset - inner_pad,
+    ]
+    try:
+        draw.rounded_rectangle(
+            outer, radius=rad, outline=_FRAME_OUTER_RGB, width=stroke
+        )
+        draw.rounded_rectangle(
+            inner, radius=max(6, rad - 6), outline=_FRAME_INNER_RGB, width=1
+        )
+    except (TypeError, ValueError):
+        draw.rectangle(outer, outline=_FRAME_OUTER_RGB, width=stroke)
+        draw.rectangle(inner, outline=_FRAME_INNER_RGB, width=1)
+
+
+def _draw_misc_gallery_masthead(
+    draw: ImageDraw.ImageDraw,
+    w: int,
+    scale: float,
+    margin_x: int,
+    margin_y: int,
+    header_font,
+    *,
+    frame_inset: int,
+    content_top_y: int,
+) -> None:
+    """Magazine-style title + rules + separator above the body."""
+    s = max(0.75, float(scale))
+    stroke = max(1, int(round(1.15 * s)))
+    inset = frame_inset
+    mx = margin_x + inset + max(4, int(6 * s))
+    mx2 = w - margin_x - inset - max(4, int(6 * s))
+    gap = max(12, int(16 * s))
+    sep_gap = max(8, int(11 * s))
+    sep_y = max(margin_y + int(28 * s), content_top_y - sep_gap)
+
+    label = "每日杂锦"
+    bb = draw.textbbox((0, 0), label, font=header_font)
+    label_w, label_h = bb[2] - bb[0], bb[3] - bb[1]
+    rule_y = margin_y + int(18 * s)
+    rule_y = min(rule_y, sep_y - int(label_h * 0.85) - 2)
+    cx = w // 2
+    x_text = cx - label_w // 2
+    y_text = rule_y - (label_h // 2) - bb[1]
+    line_y = rule_y
+    x_left_end = x_text - gap
+    x_right_start = x_text + label_w + gap
+
+    if x_left_end > mx + 20:
+        draw.line([(mx, line_y), (x_left_end, line_y)], fill=_RULE_RGB, width=stroke)
+    draw.text((x_text, y_text), label, fill=_HEADER_RGB, font=header_font)
+    if x_right_start < mx2 - 20:
+        draw.line(
+            [(x_right_start, line_y), (mx2, line_y)], fill=_RULE_RGB, width=stroke
+        )
+
+    draw.line(
+        [(mx, sep_y), (mx2, sep_y)],
+        fill=_RULE_RGB,
+        width=max(1, stroke - 1) if stroke > 1 else 1,
+    )
+
+
+def _draw_misc_gallery_footer(
+    draw: ImageDraw.ImageDraw,
+    w: int,
+    h: int,
+    scale: float,
+    margin_y: int,
+    header_font,
+    *,
+    content_bottom_y: int,
+) -> None:
+    s = max(0.75, float(scale))
+    cx = w // 2
+    foot = "· ◆ ·"
+    fbb = draw.textbbox((0, 0), foot, font=header_font)
+    fw, fh = fbb[2] - fbb[0], fbb[3] - fbb[1]
+    band_lo = content_bottom_y
+    band_hi = h - margin_y
+    fcy = (band_lo + band_hi) // 2
+    fy = fcy - fh // 2 - fbb[1]
+    draw.text((cx - fw // 2, fy), foot, fill=_FOOTER_ORNAMENT_RGB, font=header_font)
+
+
 class MiscGalleryTemplate(WallTemplate):
     """Each render shows one random entry from `_MISC_QUOTES` (unless `templateParams.text` is set)."""
 
@@ -343,15 +487,34 @@ class MiscGalleryTemplate(WallTemplate):
         w = ctx.device_profile.get("width", 800)
         h = ctx.device_profile.get("height", 600)
         scale = min(w, h) / 600
-        margin_x = max(40, int(w * 0.088))
+        margin_x = max(44, int(w * 0.092))
         margin_y = max(48, int(h * 0.062))
-        inner_h = h - 2 * margin_y
-        full_inner_w = w - 2 * margin_x
-        line_budget = max(28, min(44, int(inner_h / max(20, 26 * scale * 1.35))))
+        frame_inset = max(10, int(14 * scale))
+        body_pad = max(4, int(8 * scale))
+        header_h, footer_h = _misc_gallery_chrome_heights(h, scale)
+        content_top = margin_y + header_h
+        content_bottom = h - margin_y - footer_h
+        inner_h = max(80, content_bottom - content_top)
+        full_inner_w = max(40, w - 2 * margin_x - 2 * body_pad)
+        line_budget = max(22, min(44, int(inner_h / max(20, 26 * scale * 1.35))))
 
-        img = Image.new("RGB", (w, h), color=_BG_RGB)
+        img = _misc_gallery_paper_background(w, h)
         draw = ImageDraw.Draw(img)
         fill = _FG_RGB
+
+        header_px = max(15, int(19 * scale))
+        header_font = _load_cjk_font(header_px)
+        _draw_misc_gallery_frame(draw, w, h, scale, frame_inset=frame_inset)
+        _draw_misc_gallery_masthead(
+            draw,
+            w,
+            scale,
+            margin_x,
+            margin_y,
+            header_font,
+            frame_inset=frame_inset,
+            content_top_y=content_top,
+        )
 
         size_px = max(23, int(31 * scale))
         min_px = max(19, int(18 * scale))
@@ -374,8 +537,9 @@ class MiscGalleryTemplate(WallTemplate):
 
         total_block = _gallery_total_height(lines_spec, line_h, paragraph_gap)
         slack = max(0, inner_h - total_block)
-        y0 = margin_y + int(slack * _VERTICAL_BIAS)
+        y0 = content_top + int(slack * _VERTICAL_BIAS)
         y = y0
+        text_left = margin_x + body_pad
         for item in lines_spec:
             if item is None:
                 y += paragraph_gap
@@ -383,8 +547,18 @@ class MiscGalleryTemplate(WallTemplate):
             ln = item[:500]
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
-            x = margin_x + max(0, (full_inner_w - tw) // 2)
+            x = text_left + max(0, (full_inner_w - tw) // 2)
             draw.text((x, y), ln, fill=fill, font=font)
             y += line_h
+
+        _draw_misc_gallery_footer(
+            draw,
+            w,
+            h,
+            scale,
+            margin_y,
+            header_font,
+            content_bottom_y=content_bottom,
+        )
 
         return img
