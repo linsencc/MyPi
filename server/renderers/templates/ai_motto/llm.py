@@ -23,6 +23,7 @@ from .prompts import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT,
+    MOTTO_CHINESE_ENFORCEMENT,
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_WALLPAPER,
     USER_PROMPT,
@@ -32,6 +33,18 @@ from .prompts import (
 )
 
 log = logging.getLogger(__name__)
+
+# Minimum Han characters in the whole motto line (quote + attribution) to accept as Chinese copy.
+_MOTTO_MIN_HAN = 8
+
+
+def motto_is_acceptable_chinese(motto: str) -> bool:
+    """Reject lines that are mostly non-Chinese (e.g. English-only model slips)."""
+    motto = motto.strip()
+    if not motto.startswith("「"):
+        return False
+    han = len(re.findall(r"[\u4e00-\u9fff]", motto))
+    return han >= _MOTTO_MIN_HAN
 
 
 def strip_thinking_blocks(text: str) -> str | None:
@@ -145,9 +158,16 @@ def call_llm_for_motto() -> str:
 
     motto = ""
     raw = ""
+    append_chinese_extra = False
 
     for attempt in range(3):
-        user_content = base_user if attempt == 0 else f"{base_user}\n\n{RETRY_DIVERSIFY_SUFFIX}"
+        parts: list[str] = [base_user]
+        if append_chinese_extra:
+            parts.append(MOTTO_CHINESE_ENFORCEMENT)
+        if attempt > 0:
+            parts.append(RETRY_DIVERSIFY_SUFFIX)
+        user_content = "\n\n".join(parts)
+        append_chinese_extra = False
         payload = json.dumps({
             "model": model,
             "messages": [
@@ -193,11 +213,26 @@ def call_llm_for_motto() -> str:
                 if attempt < 2:
                     continue
                 text = strip_thinking_blocks(raw)
-                return text or fallback_motto_for_day()
+                cand = text or fallback_motto_for_day()
+                return cand if motto_is_acceptable_chinese(cand) else fallback_motto_for_day()
 
             motto = (data.get("motto") or "").strip()
             if not motto:
                 motto = strip_thinking_blocks(raw) or fallback_motto_for_day()
+
+            if not motto_is_acceptable_chinese(motto):
+                han = len(re.findall(r"[\u4e00-\u9fff]", motto))
+                log.warning(
+                    "ai_motto: motto failed Chinese check (Han=%s, len=%s), retrying",
+                    han,
+                    len(motto),
+                )
+                append_chinese_extra = True
+                if attempt < 2:
+                    continue
+                motto = fallback_motto_for_day()
+                append_motto_to_recent(motto)
+                return motto
 
             if motto and not is_motto_too_similar(motto, recent):
                 append_motto_to_recent(motto)

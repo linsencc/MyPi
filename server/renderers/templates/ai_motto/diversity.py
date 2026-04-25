@@ -89,7 +89,7 @@ MOTTO_STRATA: tuple[MottoStratum, ...] = (
 RETRY_DIVERSIFY_SUFFIX = (
     "【重试要求】上一稿与「近期去重」过于相近，或未遵守【本次唯一维度】。"
     "请**彻底换题**（换作品、作者、时代、语种）；禁止同句改标点、禁止只换一两个词。"
-    f"motto 仍须：`「正文」 -- 出处`（直角引号、半角空格、ASCII 双减号 --）；**整行 ≤{MOTTO_MAX_CHARS} 字符**。"
+    f"motto 仍须：**简体中文**整句，`「正文」 -- 出处`（直角引号、半角空格、ASCII 双减号 --）；**整行 ≤{MOTTO_MAX_CHARS} 字符**。"
 )
 
 
