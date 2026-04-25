@@ -32,27 +32,49 @@ class TemplateRegistry:
         ]
 
 
-def discover_templates() -> TemplateRegistry:
-    found: dict[str, WallTemplate] = {}
-    for info in pkgutil.iter_modules(templates_pkg.__path__):
-        if info.ispkg:
-            continue
-        mod = importlib.import_module(f"{templates_pkg.__name__}.{info.name}")
-        for _n, obj in inspect.getmembers(mod):
-            if isinstance(obj, type) and issubclass(obj, WallTemplate) and obj is not WallTemplate:
-                inst = obj()
-                tid = _to_snake_case(obj.__name__)
-                if tid.endswith("_template"):
-                    tid = tid[:-9]
-                if tid in found:
-                    raise RuntimeError(f"duplicate template_id: {tid}")
-                found[tid] = inst
-        tmpl = getattr(mod, "template", None)
-        if isinstance(tmpl, WallTemplate):
-            tid = _to_snake_case(tmpl.__class__.__name__)
+def _register_wall_templates_from_module(mod, found: dict[str, WallTemplate]) -> None:
+    for _n, obj in inspect.getmembers(mod):
+        if isinstance(obj, type) and issubclass(obj, WallTemplate) and obj is not WallTemplate:
+            inst = obj()
+            tid = _to_snake_case(obj.__name__)
             if tid.endswith("_template"):
                 tid = tid[:-9]
             if tid in found:
                 raise RuntimeError(f"duplicate template_id: {tid}")
-            found[tid] = tmpl
+            found[tid] = inst
+    tmpl = getattr(mod, "template", None)
+    if isinstance(tmpl, WallTemplate):
+        tid = _to_snake_case(tmpl.__class__.__name__)
+        if tid.endswith("_template"):
+            tid = tid[:-9]
+        if tid in found:
+            raise RuntimeError(f"duplicate template_id: {tid}")
+        found[tid] = tmpl
+
+
+def discover_templates() -> TemplateRegistry:
+    found: dict[str, WallTemplate] = {}
+    # Top-level .py in templates/ (shared helpers: photo_scrim, cjk_font, …)
+    for info in pkgutil.iter_modules(templates_pkg.__path__):
+        if info.ispkg:
+            continue
+        if info.name.startswith("_"):
+            continue
+        mod = importlib.import_module(f"{templates_pkg.__name__}.{info.name}")
+        _register_wall_templates_from_module(mod, found)
+    # One feature folder per wall template, e.g. world_masterpiece/, ai_motto/, misc_gallery/
+    for info in pkgutil.iter_modules(templates_pkg.__path__):
+        if not info.ispkg or info.name.startswith("_"):
+            continue
+        try:
+            pkg = importlib.import_module(f"{templates_pkg.__name__}.{info.name}")
+        except ImportError:
+            continue
+        if not hasattr(pkg, "__path__"):
+            continue
+        for sub in pkgutil.walk_packages(pkg.__path__, f"{pkg.__name__}."):
+            if sub.ispkg:
+                continue
+            submod = importlib.import_module(sub.name)
+            _register_wall_templates_from_module(submod, found)
     return TemplateRegistry(found)

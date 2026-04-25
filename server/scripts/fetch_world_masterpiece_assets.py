@@ -1,4 +1,4 @@
-"""Download Wikimedia originals into renderers/templates/masterpieces/ (run once from dev machine).
+"""Download Wikimedia originals into renderers/templates/world_masterpiece/masterpieces/ (run once from dev machine).
 
 Usage (from server/):  PYTHONPATH=. python scripts/fetch_world_masterpiece_assets.py
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "renderers" / "templates" / "masterpieces"
+OUT = ROOT / "renderers" / "templates" / "world_masterpiece" / "masterpieces"
 UA = "MyPiWallDisplay/1.0 (asset fetch; +https://github.com/)"
 _COMMONS = "https://upload.wikimedia.org/wikipedia/commons/"
 

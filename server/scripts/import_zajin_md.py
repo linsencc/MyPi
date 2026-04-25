@@ -1,4 +1,4 @@
-"""Parse Obsidian 杂锦.md into _MISC_QUOTES block for misc_gallery.py."""
+"""Parse Obsidian 杂锦.md into _MISC_QUOTES block for misc_gallery/template.py."""
 from __future__ import annotations
 
 import re
@@ -40,9 +40,9 @@ def emit_tuple() -> str:
 
 
 def apply_to_misc_gallery() -> None:
-    """Rewrite _MISC_QUOTES in renderers/templates/misc_gallery.py from Obsidian md."""
+    """Rewrite _MISC_QUOTES in renderers/templates/misc_gallery/template.py from Obsidian md."""
     root = Path(__file__).resolve().parents[2]
-    tpl = root / "server" / "renderers" / "templates" / "misc_gallery.py"
+    tpl = root / "server" / "renderers" / "templates" / "misc_gallery" / "template.py"
     main = tpl.read_text(encoding="utf-8")
     start = main.index("_MISC_QUOTES:")
     end = main.index("\ndef _line_width", start)
@@ -54,6 +54,6 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "--apply":
         apply_to_misc_gallery()
-        print("updated misc_gallery.py", file=sys.stderr)
+        print("updated misc_gallery/template.py", file=sys.stderr)
     else:
         print(emit_tuple(), end="")

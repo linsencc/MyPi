@@ -1,4 +1,4 @@
-"""Stratified sources + recent-quote memory for ai_motto LLM diversity.
+"""Stratified sources + recent-quote memory for the daily-motto LLM.
 
 Avoids single-film bans: each request picks a **mutually exclusive content stratum** so the model
 cannot default to the same few “global classic” quotes. Recent outputs are persisted and injected
@@ -14,6 +14,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from .prompts import MOTTO_MAX_CHARS
 from storage.paths import recent_ai_mottos_path
 
 log = logging.getLogger(__name__)
@@ -31,9 +32,10 @@ class MottoStratum:
 
 
 # 每次随机一层：影视类按地域/载体拆开，避免落到「英语大片励志台词」这一统计默认。
+# 版式、image_prompt、去重细则见 prompts.SYSTEM_PROMPT；此处只强调题材与字数。
 _MOTTO_FORMAT_HINT = (
-    " 输出句式严格为 「正文摘录」 -- 出处（出处：影视写《片名》，其它写作者/书名/人名）；"
-    "正文宜短、洗练，整段含符号不超过 34 字。"
+    " 题材须符合本段标题；motto 版式与标点以系统提示为准。影视类出处须为《片名》。"
+    f"正文宜充实、洗练，**整行 motto 含符号不超过 {MOTTO_MAX_CHARS} 字符**。"
 )
 MOTTO_STRATA: tuple[MottoStratum, ...] = (
     MottoStratum(
@@ -87,7 +89,8 @@ MOTTO_STRATA: tuple[MottoStratum, ...] = (
 RETRY_DIVERSIFY_SUFFIX = (
     "【重试要求】上一稿与「近期去重」过于相近，或未遵守【本次唯一维度】。"
     "请**彻底换题**（换作品、作者、时代、语种）；禁止同句改标点、禁止只换一两个词。"
-    "motto 仍须严格为 「正文」 -- 出处（直角引号 + 空格 + -- + 空格 + 出处）。"
+    f"motto 仍须：`「正文」 -- 出处`（直角引号、半角空格、ASCII 双减号 --）；**整行 ≤{MOTTO_MAX_CHARS} 字符**。"
+    "image_prompt 仍须 50–75 英文词、全彩壁纸风、无人像主体。"
 )
 
 
@@ -150,10 +153,10 @@ def append_motto_to_recent(motto: str) -> None:
 
 def format_recent_block(recent: list[str]) -> str:
     if not recent:
-        return "【近期去重】尚无历史记录；请按本次维度自由选题。"
+        return "【近期去重】尚无历史记录；请在本轮【本次唯一维度】内自由选题。"
     body = "\n".join(f"- {t}" for t in recent[-_RECENT_PROMPT_MAX:])
     return (
-        "【近期去重】下列为此前已展示过的寄语（勿逐字复述，勿仅改一两字）：\n"
+        "【近期去重】下列为近期已用过的整行 motto（须换作品或换句意，避免同义改写与微调）：\n"
         f"{body}"
     )
 

@@ -26,7 +26,7 @@ def wall_runs_path() -> pathlib.Path:
 
 
 def recent_ai_mottos_path() -> pathlib.Path:
-    """JSONL of recent ai_motto outputs for prompt de-duplication (see motto_diversity)."""
+    """JSONL of recent ai_motto outputs for prompt de-duplication (see templates.ai_motto.diversity)."""
     return data_dir() / "recent_ai_mottos.jsonl"
 
 

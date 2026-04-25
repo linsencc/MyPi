@@ -42,7 +42,7 @@ class _Painting:
     asset_file: str | None = None
 
 
-# Bundled JPEGs under renderers/templates/masterpieces/ (see scripts/fetch_world_masterpiece_assets.py).
+# Bundled JPEGs in this package's masterpieces/ (see server/scripts/fetch_world_masterpiece_assets.py).
 _MASTERPIECES_DIR = Path(__file__).resolve().parent / "masterpieces"
 
 # Wikimedia Commons; public-domain or freely licensed masterpieces.
