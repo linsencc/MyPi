@@ -1,11 +1,15 @@
-"""Remote art for 每日寄语: optional Pinterest **board page** parse, then Pinscrape keyword search.
+"""Remote art for 每日寄语: optional Pinterest **board** image pool, then Pinscrape keyword search.
 
-Board: default ``https://www.pinterest.com/elliotprl/wallpaper/`` (override or disable with ``MYPI_MOTTO_BOARD_URL``).
-Pinscrape search: ``MYPI_MOTTO_PINSCRAPE`` (``0``/``off`` skips keyword path only; board fetch uses stdlib urllib).
+Board pool: (1) ``widgets.pinterest.com/v3/pidgets/boards/{user}/{board}/pins/`` — one URL per pin for
+nearly the whole board; (2) board **page HTML** parse as a supplement (SSR often only repeats a small
+subset of ``orig`` URLs, which caused "always the same few wallpapers" before pidget merge).
+
+Default board ``https://www.pinterest.com/elliotprl/wallpaper/`` — override with ``MYPI_MOTTO_BOARD_URL``.
+Pinscrape search: ``MYPI_MOTTO_PINSCRAPE`` (``0``/``off`` skips keyword path only; board uses stdlib urllib).
 ``MYPI_PINSCRAPE_*``, ``MYPI_LLM_PROXY`` / ``HTTPS_PROXY`` (see ``net.http_proxy_url``).
 Offline: ``MYPI_MOTTO_OFFLINE_IMAGE``. Images honor ``MYPI_MOTTO_IMAGE_NO_PROXY`` via ``build_motto_image_opener``.
 
-Note: pinscrape's ``Pinterest.get_pin_details`` does not return image URLs; board images are parsed from the public HTML/JSON embed.
+Note: pinscrape's ``Pinterest.get_pin_details`` does not return image URLs; board pins use pidget JSON + HTML embed.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from PIL import Image, ImageEnhance, ImageOps, ImageStat
 
@@ -53,6 +58,98 @@ def _normalize_pinterest_board_url(url: str) -> str:
     if not u.startswith("http"):
         u = "https://" + u.lstrip("/")
     return u + "/" if not u.endswith("/") else u
+
+
+def _board_user_slug_from_pinterest_url(board_url: str) -> tuple[str, str] | None:
+    """``username`` and ``board_slug`` from ``…/username/board/…`` (first two path segments after pinterest.com)."""
+    u = board_url.strip().split("?")[0].strip()
+    low = u.lower()
+    key = "pinterest.com"
+    if key not in low:
+        return None
+    i = low.index(key) + len(key)
+    tail = u[i:].strip("/")
+    parts = [p for p in tail.split("/") if p and p not in ("pin", "ideas", "today")]
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return None
+
+
+def _fetch_pidget_board_pin_image_urls(
+    username: str,
+    board_slug: str,
+    opener: urllib.request.OpenerDirector,
+) -> list[str]:
+    """Public widget JSON: one image URL per pin (covers almost the full board vs SSR HTML subset)."""
+    api = (
+        "https://widgets.pinterest.com/v3/pidgets/boards/"
+        f"{quote(username, safe='')}/{quote(board_slug, safe='')}/pins/"
+    )
+    req = urllib.request.Request(
+        api,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": "https://www.pinterest.com/",
+        },
+        method="GET",
+    )
+    try:
+        with opener.open(req, timeout=35) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        log.warning("ai_motto: pidget board pins HTTP %s", exc.code)
+        return []
+    except Exception as exc:
+        log.warning("ai_motto: pidget board pins fetch failed: %s", exc)
+        return []
+    try:
+        j = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return []
+    if j.get("status") != "success":
+        return []
+    data = j.get("data")
+    if not isinstance(data, dict):
+        return []
+    pins = data.get("pins")
+    if not isinstance(pins, list):
+        return []
+    out: list[str] = []
+    for pin in pins:
+        if not isinstance(pin, dict):
+            continue
+        if pin.get("is_video"):
+            continue
+        images = pin.get("images")
+        if not isinstance(images, dict):
+            continue
+        u: str | None = None
+        for key in ("736x", "orig", "564x", "474x", "236x"):
+            blob = images.get(key)
+            if isinstance(blob, dict):
+                cand = blob.get("url")
+                if isinstance(cand, str) and "pinimg.com" in cand:
+                    u = cand
+                    break
+        if u:
+            out.append(u.strip().split("\\")[0].strip())
+    return out
+
+
+def _merge_pinimg_url_lists(*lists: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for lst in lists:
+        for u in lst:
+            u2 = u.split("\\")[0].strip()
+            if u2 and u2 not in seen:
+                seen.add(u2)
+                out.append(u2)
+    return out
 
 
 def _collect_orig_urls_from_pinterest_json(obj: object, out: list[str]) -> None:
@@ -138,8 +235,12 @@ def _try_download_pin_urls(urls: list[str], opener: urllib.request.OpenerDirecto
     rng = random.Random(time.time_ns())
     urls_try = list(urls)
     rng.shuffle(urls_try)
+    try:
+        cap = max(12, min(200, int(os.environ.get("MYPI_MOTTO_MAX_PIN_TRIES", "96"))))
+    except ValueError:
+        cap = 96
     pin_headers = {"Referer": "https://www.pinterest.com/", "Accept": "image/avif,image/webp,*/*;q=0.8"}
-    for url in urls_try[:48]:
+    for url in urls_try[:cap]:
         if not url or "pinimg.com" not in url:
             continue
         log.info("ai_motto: pin candidate url=%s", url[:120])
@@ -400,14 +501,26 @@ def fetch_web_motto_image(
     _height: int,
     _motto: str,
 ) -> Image.Image | None:
-    """Try Pinterest board HTML first, then pinscrape keyword search. On failure return ``None`` — template uses ``offline_motto_art``."""
+    """Try Pinterest board (pidget JSON + HTML), then pinscrape keyword search. On failure return ``None`` — template uses ``offline_motto_art``."""
     opener = build_motto_image_opener()
     bu = _motto_pinterest_board_url()
     if bu:
         html = _fetch_pinterest_board_html(bu, opener)
-        if html:
-            cand = _parse_board_html_for_pin_urls(html)
-            log.info("ai_motto: board %r → %d pinimg candidates", bu[:72], len(cand))
+        pidget_urls: list[str] = []
+        slug = _board_user_slug_from_pinterest_url(bu)
+        if slug:
+            user, board = slug
+            pidget_urls = _fetch_pidget_board_pin_image_urls(user, board, opener)
+            log.info(
+                "ai_motto: pidget boards/%s/%s → %d pin image urls",
+                user,
+                board,
+                len(pidget_urls),
+            )
+        html_urls: list[str] = _parse_board_html_for_pin_urls(html) if html else []
+        cand = _merge_pinimg_url_lists(pidget_urls, html_urls)
+        if cand:
+            log.info("ai_motto: board %r → %d merged pinimg candidates", bu[:72], len(cand))
             art = _try_download_pin_urls(cand, opener)
             if art is not None:
                 return art

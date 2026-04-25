@@ -2,12 +2,37 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import random
 import re
 
 from PIL import Image, ImageDraw
 
 from renderers.template_base import RenderContext, WallTemplate
+from renderers.templates.ai_motto.images import (
+    beautify_landscape_art,
+    fetch_web_motto_image,
+    offline_motto_art,
+)
+from renderers.templates.ai_motto.compose import (
+    flatten_lines_spec_for_motto_scrim,
+    load_motto_quote_font,
+    motto_on_scrim_body_fits,
+    paint_motto_on_scrim_body,
+)
+from renderers.templates.photo_scrim import (
+    fit_image_cover,
+    infer_fetch_size,
+    overlay_bottom_scrim,
+)
+
+log = logging.getLogger(__name__)
+
+
+def _misc_gallery_fetch_art_enabled() -> bool:
+    raw = os.environ.get("MYPI_MISC_GALLERY_ART", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
 
 # Paper + chrome (warm editorial look; subtle enough for e-ink).
 _BG_TOP_RGB = (247, 244, 238)
@@ -335,6 +360,54 @@ def _line_height_from_font(draw: ImageDraw.ImageDraw, font, size_px: int) -> int
     return max(int(core * _LINE_HEIGHT_FACTOR), int(size_px * 1.42))
 
 
+def _misc_gallery_art_layer(w: int, h: int) -> Image.Image | None:
+    """Full-bleed art like 每日寄语 (board / pinscrape / offline); ``None`` if disabled."""
+    if not _misc_gallery_fetch_art_enabled():
+        return None
+    gen_w, gen_h = infer_fetch_size(w, h)
+    art = fetch_web_motto_image(
+        "calm editorial wallpaper landscape soft light",
+        gen_w,
+        gen_h,
+        "",
+    )
+    if art is None:
+        art = offline_motto_art(gen_w, gen_h)
+    fitted = fit_image_cover(art, w, h)
+    return beautify_landscape_art(fitted)
+
+
+def _misc_gallery_base_canvas(w: int, h: int) -> Image.Image:
+    """Paper texture blended over motto-style wallpaper (readable body + visible art)."""
+    paper = _misc_gallery_paper_background(w, h)
+    art_layer = _misc_gallery_art_layer(w, h)
+    if art_layer is None:
+        return paper
+    try:
+        blend = float(os.environ.get("MYPI_MISC_GALLERY_PAPER_BLEND", "0.42").strip())
+    except ValueError:
+        blend = 0.42
+    blend = max(0.0, min(0.82, blend))
+    base = Image.blend(art_layer, paper, blend)
+    # Light bottom lift so footer ornament stays legible on saturated pins.
+    raw_scrim = os.environ.get("MYPI_MISC_GALLERY_BOTTOM_SCRIM", "0.32").strip()
+    try:
+        smax = float(raw_scrim)
+    except ValueError:
+        smax = 0.32
+    if smax > 0.02:
+        y0 = max(0, int(h * 0.68))
+        overlay_bottom_scrim(
+            base,
+            y0,
+            h - y0,
+            max_opacity_env="MYPI_MISC_GALLERY_SCRIM_MAX",
+            default_max_opacity=min(0.55, smax),
+        )
+    log.debug("misc_gallery: art + paper blend (paper_alpha=%.2f)", blend)
+    return base
+
+
 def _misc_gallery_paper_background(w: int, h: int) -> Image.Image:
     """Soft vertical gradient + light film grain (PIL-only)."""
     w, h = max(1, w), max(1, h)
@@ -487,6 +560,62 @@ class MiscGalleryTemplate(WallTemplate):
         w = ctx.device_profile.get("width", 800)
         h = ctx.device_profile.get("height", 600)
         scale = min(w, h) / 600
+        art_mode = _misc_gallery_fetch_art_enabled()
+
+        img = _misc_gallery_base_canvas(w, h)
+        draw = ImageDraw.Draw(img)
+
+        if art_mode:
+            # 正文与页脚：复用 ``ai_motto.compose`` 寄语配图管线（仅换行在杂锦侧按宽折行后展平）。
+            margin = max(28, int(w * 0.058))
+            full_inner_w = max(40, w - 2 * margin)
+            footer_reserve = h - max(20, int(26 * scale)) - int(18 * scale)
+            top_reserve = int(h * 0.12)
+            inner_slot = max(80, footer_reserve - top_reserve)
+            _row = max(22, int(24 * scale * 1.12))
+            line_budget = max(12, min(40, inner_slot // _row if _row else 40))
+
+            min_px = max(15, int(16 * scale))
+            picked_lines: list[str] = []
+            picked_breaks: frozenset[int] = frozenset()
+            picked_size = min_px
+            s = max(21, int(30 * scale))
+            while s >= min_px:
+                font, _ = load_motto_quote_font(s)
+                body_w = _body_measure_width(draw, font, full_inner_w)
+                lines_spec = _layout_gallery_lines(draw, font, text, body_w)
+                flat, br = flatten_lines_spec_for_motto_scrim(lines_spec)
+                if not flat:
+                    s -= 2
+                    continue
+                if len(flat) <= line_budget and motto_on_scrim_body_fits(
+                    draw, w, h, flat, br, s
+                ):
+                    picked_lines, picked_breaks, picked_size = flat, br, s
+                    break
+                s -= 2
+            else:
+                font, _ = load_motto_quote_font(min_px)
+                body_w = _body_measure_width(draw, font, full_inner_w)
+                lines_spec = _layout_gallery_lines(draw, font, text, body_w)
+                picked_lines, picked_breaks = flatten_lines_spec_for_motto_scrim(
+                    lines_spec
+                )
+                picked_size = min_px
+
+            paint_motto_on_scrim_body(
+                draw,
+                w,
+                h,
+                picked_lines,
+                picked_breaks,
+                picked_size,
+                attr_suffix="— 每日杂锦",
+                draw_footer=True,
+            )
+            return img
+
+        # Paper-only: original magazine chrome + dark body text.
         margin_x = max(44, int(w * 0.092))
         margin_y = max(48, int(h * 0.062))
         frame_inset = max(10, int(14 * scale))
@@ -498,8 +627,6 @@ class MiscGalleryTemplate(WallTemplate):
         full_inner_w = max(40, w - 2 * margin_x - 2 * body_pad)
         line_budget = max(22, min(44, int(inner_h / max(20, 26 * scale * 1.35))))
 
-        img = _misc_gallery_paper_background(w, h)
-        draw = ImageDraw.Draw(img)
         fill = _FG_RGB
 
         header_px = max(15, int(19 * scale))
