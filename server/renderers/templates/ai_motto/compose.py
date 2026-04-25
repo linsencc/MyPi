@@ -273,6 +273,214 @@ def _ink_heights_for_motto_lines(
     return out
 
 
+def flatten_lines_spec_for_motto_scrim(
+    lines_spec: list[str | None],
+) -> tuple[list[str], frozenset[int]]:
+    """Turn ``[a, b, None, c]`` into lines ``[a,b,c]`` + break indices ``{2}`` (extra gap before line 2)."""
+    lines: list[str] = []
+    breaks: set[int] = set()
+    for item in lines_spec:
+        if item is None:
+            breaks.add(len(lines))
+            continue
+        t = str(item).strip()
+        if not t:
+            continue
+        lines.append(t[:500])
+    return lines, frozenset(breaks)
+
+
+def _motto_on_scrim_para_extra(
+    k: int, breaks_before_line: set[int] | frozenset[int], para_unit: int
+) -> int:
+    return para_unit * sum(1 for b in breaks_before_line if b <= k)
+
+
+def layout_motto_on_scrim_body(
+    draw: ImageDraw.ImageDraw,
+    canvas_w: int,
+    canvas_h: int,
+    lines: list[str],
+    breaks_before_line: set[int] | frozenset[int],
+    size_px: int,
+) -> dict:
+    """Compute 每日寄语配图分支同款竖排与描边参数；``lines`` 为已定宽的物理行。"""
+    scale = min(canvas_w, canvas_h) / 600
+    # 与 compose_motto 配图分支一致：靠下，落在 scrim 压暗更实的一段。
+    text_zone_center = int(canvas_h * 0.718)
+    footer_pad = max(20, int(26 * scale))
+    footer_reserve = canvas_h - footer_pad - int(18 * scale)
+
+    if not lines:
+        return {
+            "y0": text_zone_center,
+            "line_step": 0,
+            "font": None,
+            "font_attrib": None,
+            "quote_bold": False,
+            "size_px": size_px,
+            "size_attrib": max(14, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO)),
+            "stroke_w": 1,
+            "q_fill": _QUOTE_ON_SCRIM_FILL_PLAIN,
+            "q_stroke": _QUOTE_ON_SCRIM_STROKE_PLAIN,
+            "attrib_idx": None,
+            "attrib_air": 0,
+            "breaks_before_line": frozenset(breaks_before_line),
+            "last_bottom": text_zone_center,
+            "footer_pad": footer_pad,
+        }
+
+    font, quote_bold = load_motto_quote_font(size_px)
+    size_attrib = max(14, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO))
+    font_attrib, _ = load_motto_quote_font(size_attrib)
+    ink_heights = _ink_heights_for_motto_lines(lines, font, font_attrib, draw)
+    line_gap = int(size_px * (0.32 if not quote_bold else 0.2))
+    line_step = max(ink_heights) + max(6, line_gap)
+    attrib_idx = _first_attribution_line_index(lines)
+    attrib_air = int(size_px * (0.48 if not quote_bold else 0.42))
+    _air = attrib_air if attrib_idx is not None else 0
+    para_add = attrib_air * len(breaks_before_line)
+    trim = max(0, int(size_px * 0.05))
+    block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air + para_add - trim
+    y0 = text_zone_center - block_h // 2
+
+    def _last_bottom(y0v: int) -> int:
+        lb = 0
+        for k, ln in enumerate(lines):
+            fk = _quote_font_for_line(ln, font, font_attrib)
+            bbox = draw.textbbox((0, 0), ln, font=fk)
+            ink = bbox[3] - bbox[1]
+            pe = _motto_on_scrim_para_extra(k, breaks_before_line, attrib_air)
+            y_shift = attrib_air if attrib_idx is not None and k >= attrib_idx else 0
+            ty = y0v + k * line_step + pe + y_shift - bbox[1]
+            lb = max(lb, ty + ink)
+        return lb
+
+    last_bottom = _last_bottom(y0)
+    if last_bottom > footer_reserve:
+        y0 = max(int(canvas_h * 0.12), int(footer_reserve - last_bottom + y0))
+        last_bottom = _last_bottom(y0)
+
+    if quote_bold:
+        q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL, _QUOTE_ON_SCRIM_STROKE
+        stroke_w = max(1, int(1.55 * scale))
+    else:
+        q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
+        stroke_w = max(2, min(5, int(0.55 * scale + 1.15)))
+
+    return {
+        "y0": y0,
+        "line_step": line_step,
+        "font": font,
+        "font_attrib": font_attrib,
+        "quote_bold": quote_bold,
+        "size_px": size_px,
+        "size_attrib": size_attrib,
+        "stroke_w": stroke_w,
+        "q_fill": q_fill,
+        "q_stroke": q_stroke,
+        "attrib_idx": attrib_idx,
+        "attrib_air": attrib_air,
+        "breaks_before_line": frozenset(breaks_before_line),
+        "last_bottom": last_bottom,
+        "footer_pad": footer_pad,
+    }
+
+
+def paint_motto_on_scrim_body(
+    draw: ImageDraw.ImageDraw,
+    canvas_w: int,
+    canvas_h: int,
+    lines: list[str],
+    breaks_before_line: set[int] | frozenset[int],
+    size_px: int,
+    *,
+    attr_suffix: str = "— 每日寄语",
+    draw_footer: bool = True,
+) -> None:
+    """在已有底图 + scrim 上绘制寄语同款正文与页脚（``compose_motto`` 配图分支复用）。"""
+    if not lines:
+        return
+    geo = layout_motto_on_scrim_body(
+        draw, canvas_w, canvas_h, lines, breaks_before_line, size_px
+    )
+    font = geo["font"]
+    font_attrib = geo["font_attrib"]
+    y0 = geo["y0"]
+    line_step = geo["line_step"]
+    stroke_w = geo["stroke_w"]
+    q_fill = geo["q_fill"]
+    q_stroke = geo["q_stroke"]
+    attrib_idx = geo["attrib_idx"]
+    attrib_air = geo["attrib_air"]
+    size_attrib = geo["size_attrib"]
+    size_px_e = geo["size_px"]
+    breaks = geo["breaks_before_line"]
+
+    for k, ln in enumerate(lines):
+        fk = _quote_font_for_line(ln, font, font_attrib)
+        bbox = draw.textbbox((0, 0), ln, font=fk)
+        tw = bbox[2] - bbox[0]
+        tx = (canvas_w - tw) // 2
+        pe = _motto_on_scrim_para_extra(k, breaks, attrib_air)
+        y_shift = attrib_air if attrib_idx is not None and k >= attrib_idx else 0
+        ty = y0 + k * line_step + pe + y_shift - bbox[1]
+        sw = (
+            max(1, int(stroke_w * size_attrib / max(size_px_e, 1)))
+            if _is_attribution_line(ln)
+            else stroke_w
+        )
+        draw.text(
+            (tx, ty),
+            ln,
+            fill=q_fill,
+            font=fk,
+            stroke_width=sw,
+            stroke_fill=q_stroke,
+        )
+
+    if draw_footer:
+        scale = min(canvas_w, canvas_h) / 600
+        footer_y = canvas_h - geo["footer_pad"]
+        _draw_motto_footer(
+            draw, canvas_w, footer_y, scale, on_scrim=True, attr_suffix=attr_suffix
+        )
+
+
+def motto_on_scrim_body_height(
+    draw: ImageDraw.ImageDraw,
+    canvas_w: int,
+    canvas_h: int,
+    lines: list[str],
+    breaks_before_line: set[int] | frozenset[int],
+    size_px: int,
+) -> int:
+    """正文块占用高度（用于杂锦等 shrink-to-fit）；与 ``layout_motto_on_scrim_body`` 一致。"""
+    geo = layout_motto_on_scrim_body(
+        draw, canvas_w, canvas_h, lines, breaks_before_line, size_px
+    )
+    return max(0, geo["last_bottom"] - geo["y0"])
+
+
+def motto_on_scrim_body_fits(
+    draw: ImageDraw.ImageDraw,
+    canvas_w: int,
+    canvas_h: int,
+    lines: list[str],
+    breaks_before_line: set[int] | frozenset[int],
+    size_px: int,
+) -> bool:
+    """正文是否落在与 ``compose_motto`` 配图相同的顶/底安全区内。"""
+    if not lines:
+        return False
+    geo = layout_motto_on_scrim_body(
+        draw, canvas_w, canvas_h, lines, breaks_before_line, size_px
+    )
+    scale = min(canvas_w, canvas_h) / 600
+    footer_reserve = canvas_h - max(20, int(26 * scale)) - int(18 * scale)
+    return geo["last_bottom"] <= footer_reserve + 1 and geo["y0"] >= int(canvas_h * 0.12) - 2
+
+
 def compose_motto(
     motto: str,
     art: Image.Image | None,
@@ -290,24 +498,19 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        # 渐变起点略高 + 较高峰值透明度，让文字带所在高度有足够压暗，避免白字融进白云。
-        scrim_start = int(canvas_h * 0.30)
+        # 渐变起点高 + 深底色与高峰值透明度，压暗带更实，白字与亮底分离更好。
+        scrim_start = int(canvas_h * 0.28)
         overlay_bottom_scrim(
             img,
             scrim_start,
             canvas_h - scrim_start,
-            scrim_rgb=(26, 28, 34),
-            default_max_opacity=0.80,
-            curve_exp=1.36,
+            scrim_rgb=(16, 18, 24),
+            default_max_opacity=0.88,
+            curve_exp=1.30,
         )
         draw = ImageDraw.Draw(img)
 
-        # 略靠下，落在 scrim 更实的一段，亮底上可读性更好。
-        text_zone_center = int(canvas_h * 0.692)
         size_px = max(21, int(30 * scale))
-        font, quote_bold = load_motto_quote_font(size_px)
-        size_attrib = max(14, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO))
-        font_attrib, _ = load_motto_quote_font(size_attrib)
         raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.02)))
         n = len(motto)
         if n <= raw_max:
@@ -317,51 +520,16 @@ def compose_motto(
         else:
             max_chars = raw_max
         lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
-        ink_heights = _ink_heights_for_motto_lines(lines, font, font_attrib, draw)
-        line_gap = int(size_px * (0.32 if not quote_bold else 0.2))
-        line_step = max(ink_heights) + max(6, line_gap)
-        attrib_idx = _first_attribution_line_index(lines)
-        attrib_air = int(size_px * (0.48 if not quote_bold else 0.42))
-        _air = attrib_air if attrib_idx is not None else 0
-        block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air - max(0, int(size_px * 0.05))
-        y0 = text_zone_center - block_h // 2
-        footer_pad = max(20, int(26 * scale))
-        footer_reserve = canvas_h - footer_pad - int(18 * scale)
-        last_bottom = (
-            y0
-            + (len(lines) - 1) * line_step
-            + (attrib_air if attrib_idx is not None and (len(lines) - 1) >= attrib_idx else 0)
-            + max(ink_heights)
+        paint_motto_on_scrim_body(
+            draw,
+            canvas_w,
+            canvas_h,
+            lines,
+            frozenset(),
+            size_px,
+            attr_suffix="— 每日寄语",
+            draw_footer=True,
         )
-        if last_bottom > footer_reserve:
-            y0 = max(int(canvas_h * 0.12), footer_reserve - last_bottom + y0)
-
-        if quote_bold:
-            q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL, _QUOTE_ON_SCRIM_STROKE
-            stroke_w = max(1, int(1.55 * scale))
-        else:
-            q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
-            # 至少约 2px 等效描边 + 随 scale 略增，高亮背景上仍保持「纸感」不糊成一片。
-            stroke_w = max(2, min(5, int(0.55 * scale + 1.15)))
-        for k, ln in enumerate(lines):
-            fk = _quote_font_for_line(ln, font, font_attrib)
-            bbox = draw.textbbox((0, 0), ln, font=fk)
-            tw = bbox[2] - bbox[0]
-            tx = (canvas_w - tw) // 2
-            y_shift = attrib_air if attrib_idx is not None and k >= attrib_idx else 0
-            ty = y0 + k * line_step + y_shift - bbox[1]
-            sw = max(1, int(stroke_w * size_attrib / max(size_px, 1))) if _is_attribution_line(ln) else stroke_w
-            draw.text(
-                (tx, ty),
-                ln,
-                fill=q_fill,
-                font=fk,
-                stroke_width=sw,
-                stroke_fill=q_stroke,
-            )
-
-        footer_y = canvas_h - footer_pad
-        _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=True)
 
     else:
         bar_w = int(32 * scale)
