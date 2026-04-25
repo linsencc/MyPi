@@ -513,7 +513,8 @@ def compose_motto(
             canvas_h - scrim_start,
             scrim_rgb=(16, 18, 24),
             default_max_opacity=0.95,
-            curve_exp=0.5,
+            # 1.05 ≈ photo_scrim 允许下限：条内 alpha 随高度接近线性，压暗尽早铺开。
+            curve_exp=1.05,
         )
         draw = ImageDraw.Draw(img)
 
