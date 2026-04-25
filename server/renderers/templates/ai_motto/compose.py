@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -59,6 +60,25 @@ _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
 _FOOTER_ON_SCRIM_A = (188, 182, 170)
 _FOOTER_ON_SCRIM_B = (138, 132, 122)
+
+# Between closing 「」 and ASCII ` -- ` (display): one ideographic space reads wider than a single ASCII space.
+_MOTTO_QUOTE_TO_DASH_GAP = "\u3000"
+
+# Match `」` + flexible space + `--` + space before attribution (LLM uses `」 -- `; display may insert \u3000).
+_RE_MOTTO_ATTRIB_SPLIT = re.compile(r"」([\s\u3000]*--\s)")
+
+
+def _motto_display_widen_quote_dash_gap(motto: str) -> str:
+    """Insert a fullwidth space before ` -- ` so quote body and attribution breathe slightly (display only)."""
+    if "」" not in motto or "--" not in motto:
+        return motto
+    m = _RE_MOTTO_ATTRIB_SPLIT.search(motto)
+    if not m:
+        return motto
+    inner = m.group(1)
+    if _MOTTO_QUOTE_TO_DASH_GAP in inner:
+        return motto
+    return motto[: m.start() + 1] + _MOTTO_QUOTE_TO_DASH_GAP + inner + motto[m.end() :]
 
 
 def _draw_motto_footer(
@@ -127,16 +147,16 @@ def _wrap_segment_greedy(segment: str, max_chars: int, max_lines: int) -> list[s
 
 
 def _wrap_motto_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
-    """Motto-aware wrap: keep `」 -- 出处` on its own last line when it fits; prefer CJK punctuation breaks."""
+    """Motto-aware wrap: keep `」 … -- 出处` on its own last line when it fits; prefer CJK punctuation breaks."""
     t = text.replace("\n", " ").strip()
     if not t:
         return ["晨光正好，今天也值得认真过。"]
 
-    marker = "」 -- "
-    idx = t.find(marker)
-    if idx < 0:
+    m = _RE_MOTTO_ATTRIB_SPLIT.search(t)
+    if not m:
         return _wrap_segment_greedy(t, max_chars, max_lines)
 
+    idx = m.start()
     head = t[: idx + len("」")]
     suffix = t[idx + len("」") :]
     if not suffix:
@@ -155,17 +175,14 @@ def _wrap_motto_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
 
 
 def _split_attribution_to_own_line(lines: list[str]) -> list[str]:
-    """If `」 -- 出处` was wrapped onto one line, force ` -- …` onto its own line(s)."""
-    needle = "」 -- "
+    """If `」 … -- 出处` was wrapped onto one line, force ` … -- …` onto its own line(s)."""
     out: list[str] = []
     for ln in lines:
-        if needle not in ln:
+        mo = _RE_MOTTO_ATTRIB_SPLIT.search(ln)
+        if not mo:
             out.append(ln)
             continue
-        j = ln.find(needle)
-        if j < 0:
-            out.append(ln)
-            continue
+        j = mo.start()
         before = ln[: j + len("」")].strip()
         after = ln[j + len("」") :]
         if before:
@@ -190,6 +207,7 @@ def _fix_lonely_closing_corner(lines: list[str]) -> list[str]:
 
 
 def _motto_wrap_pipeline(motto: str, max_chars: int, max_lines: int) -> list[str]:
+    motto = _motto_display_widen_quote_dash_gap(motto)
     return _fix_lonely_closing_corner(
         _split_attribution_to_own_line(_wrap_motto_lines(motto, max_chars=max_chars, max_lines=max_lines))
     )
