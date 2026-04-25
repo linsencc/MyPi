@@ -505,15 +505,15 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        # 渐变略早于 0.6 起；curve_exp<1 抬高条内中段 alpha，避免正文落在 t≈0.4～0.5 仍偏透。
-        scrim_start = int(canvas_h * 0.55)
+        # scrim 从半屏往下；curve_exp<1 抬高条内中段 alpha；底色略深利于同透明度下压亮底。
+        scrim_start = int(canvas_h * 0.50)
         overlay_bottom_scrim(
             img,
             scrim_start,
             canvas_h - scrim_start,
-            scrim_rgb=(12, 14, 20),
+            scrim_rgb=(6, 8, 14),
             default_max_opacity=0.98,
-            curve_exp=0.92,
+            curve_exp=0.90,
         )
         draw = ImageDraw.Draw(img)
 
