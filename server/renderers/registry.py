@@ -62,7 +62,7 @@ def discover_templates() -> TemplateRegistry:
             continue
         mod = importlib.import_module(f"{templates_pkg.__name__}.{info.name}")
         _register_wall_templates_from_module(mod, found)
-    # One feature folder per wall template, e.g. world_masterpiece/, ai_motto/, misc_gallery/
+    # One feature folder per wall template, e.g. ai_motto/, misc_gallery/
     for info in pkgutil.iter_modules(templates_pkg.__path__):
         if not info.ispkg or info.name.startswith("_"):
             continue
