@@ -80,9 +80,9 @@ _ACCENT_COLOR = (85, 80, 72)
 # Strong contrast (used when MYPI_MOTTO_QUOTE_BOLD=1 or synthetic bold).
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
-# Plain / 朴素：略偏乳白（略压最亮点）+ 较深暖灰描边，兼顾亮云底上的分离度。
+# Plain / 朴素：略偏乳白 + 偏浅暖灰描边（弱于上一版，仍略压字边对比）。
 _QUOTE_ON_SCRIM_FILL_PLAIN = (250, 248, 242)
-_QUOTE_ON_SCRIM_STROKE_PLAIN = (56, 52, 48)
+_QUOTE_ON_SCRIM_STROKE_PLAIN = (88, 84, 78)
 _FOOTER_ON_SCRIM_A = (188, 182, 174)
 _FOOTER_ON_SCRIM_B = (136, 130, 122)
 
@@ -373,7 +373,7 @@ def layout_motto_on_scrim_body(
         stroke_w = max(1, int(1.55 * scale))
     else:
         q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
-        stroke_w = max(2, min(5, int(0.55 * scale + 1.15)))
+        stroke_w = max(1, min(3, int(0.42 * scale + 0.78)))
 
     return {
         "y0": y0,
