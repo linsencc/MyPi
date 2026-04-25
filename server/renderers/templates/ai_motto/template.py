@@ -11,7 +11,7 @@ from renderers.templates.photo_scrim import infer_fetch_size
 
 from .compose import compose_motto
 from .images import fetch_web_motto_image, offline_motto_art
-from .llm import call_llm_for_motto
+from .llm import call_llm_for_motto, call_llm_for_wallpaper_image_prompt
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,8 @@ class AiMottoTemplate(WallTemplate):
             log.info("ai_motto: templateParams.text set; using fixed motto, no LLM/web image")
             motto, image_prompt = override_text, None
         else:
-            motto, image_prompt = call_llm_for_motto()
+            motto = call_llm_for_motto()
+            image_prompt = call_llm_for_wallpaper_image_prompt()
 
         art = None
         gen_w, gen_h = infer_fetch_size(w, h)

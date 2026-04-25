@@ -1,7 +1,8 @@
-"""LLM system/user prompts and offline motto fallbacks for 每日寄语."""
+"""LLM prompts and offline fallbacks for 每日寄语 (motto vs wallpaper image_prompt are independent)."""
 
 from __future__ import annotations
 
+import random
 import textwrap
 from datetime import datetime
 
@@ -10,14 +11,17 @@ DEFAULT_LLM_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_LLM_MODEL = "deepseek/deepseek-chat"
 DEFAULT_LLM_TIMEOUT = 20
 
+# Style moodboard (human-curated wallpaper pins); image_prompt LLM is steered to match this vibe, not to match the Chinese motto.
+# https://www.pinterest.com/elliotprl/wallpaper/_tools/organize/?organization_feed=False
+
 # 整行 motto（含「」、空格、--、出处）字符上限；与排版 max_lines 一并调整。
 MOTTO_MAX_CHARS = 96
 
 SYSTEM_PROMPT = textwrap.dedent(f"""\
-    你是「每日寄语」生成器：只输出**一个合法 JSON 对象**（UTF-8），含键 `motto` 与 `image_prompt`。禁止 Markdown 代码围栏、禁止 JSON 前后的说明或标签。
+    你是「每日寄语」**文案**生成器：只输出**一个合法 JSON 对象**（UTF-8），**仅含键 `motto`**。禁止 Markdown 代码围栏、禁止 JSON 前后的说明或标签。
 
     ## 输出形状
-    {{"motto":"……","image_prompt":"……"}}
+    {{"motto":"……"}}
     （合法 JSON：键与字符串用英文双引号；字符串内若含英文双引号须用反斜杠转义。motto 正文通常无需英文双引号。）
 
     ## motto（中文，硬性版式）
@@ -34,21 +38,37 @@ SYSTEM_PROMPT = textwrap.dedent(f"""\
     - 【近期去重】：新句须在**作品/立意/措辞**上与列表中任一条明显不同；禁止只改标点或替换一两个词。
     - 避免总选模型最常见的几条「全球通用品」；略冷门但贴切优于大路货。
 
-    ## image_prompt（英文，供壁纸图检索）
-    - **50–75 个英文词**；以**可画面化的名词与场景**开头（如 mountain lake, evening glow, village rooftops），再接画风词；少用冗长从句与 and/with/that 串成一整句。
-    - 画面：全彩、开阔远景、偏插画或壁纸感，与 motto 情绪或意象**大致呼应**即可；竖屏友好或易竖裁的宽幅远景。
-    - 推荐画风词：watercolor, painterly, anime landscape illustration, aesthetic wallpaper, soft golden light, vivid colors, dreamy atmosphere, cozy countryside, distant mountains.
-    - **禁止**：黑白 / sepia、室内为主、新闻街拍感、**人脸或人像为主体**（至多远处不可辨小点）、画面内文字或水印、画框。
-
     ## 版式核对（生成前自检）
-    输出前确认：行首为 「、行末为出处；中间为 `空格--空格`；总长 ≤{MOTTO_MAX_CHARS}；image_prompt 为英文词串而非中文。
+    输出前确认：行首为 「、行末为出处；中间为 `空格--空格`；总长 ≤{MOTTO_MAX_CHARS}；除 `motto` 外不要输出其它键。
 """)
 
 USER_PROMPT = textwrap.dedent(f"""\
-    请按**用户消息中本轮的【本次唯一维度】与【近期去重】**生成一条新的寄语与配图检索词。
+    请按**用户消息中本轮的【本次唯一维度】与【近期去重】**生成一条新的中文寄语。
 
     - motto：严格使用 `「正文」 -- 出处` 版式；正文可充分展开，**整行 ≤ {MOTTO_MAX_CHARS} 字符**；真实摘句、忌空泛鸡汤。
-    - image_prompt：英文、50–75 词，场景名词靠前，全彩壁纸风插画远景，与寄语意境大致相合；无人像主体、无屏上文字。
+""")
+
+SYSTEM_PROMPT_WALLPAPER = textwrap.dedent("""\
+    你是「全屏插画壁纸」英文检索词生成器，与任何中文寄语**无关**；只输出**一个合法 JSON**（UTF-8），**仅含键 `image_prompt`**。禁止 Markdown 围栏、禁止 JSON 外说明。
+
+    ## 输出形状
+    {"image_prompt":"……"}
+
+    ## 风格目标（对齐 Pinterest 画板「wallpaper」类精选：动漫风景壁纸、概念场景、治愈系自然）
+    参考气质：anime scenery wallpaper、scenery / landscape concept art、watercolor 或 painterly 插画、柔和光线、开阔远景；可出现荷塘与小舟、绿荫树冠、草坡野花、海边崖岸、田园小屋、云层天光等，偏 Ghibli 式宁静或 laptop aesthetic 插画壁纸。**不要**为了「配合某句中文」而选题——每次自由换场景与光色。
+
+    ## image_prompt（英文）
+    - **50–75 个英文词**；以**可画面化的名词与场景**开头，再接画风词；少用冗长从句与 and/with/that 串成一整句。
+    - 全彩、偏插画或壁纸感、竖屏友好或易竖裁的宽幅远景。
+    - 可用词簇示例（按需组合，勿机械堆砌）：anime landscape illustration, aesthetic wallpaper, soft golden light, vivid greens, dreamy atmosphere, cozy countryside, distant mountains, lotus pond, tree canopy, coastal cliff, watercolor, painterly.
+    - **禁止**：黑白 / sepia、室内为主、新闻街拍、**人脸或人像为主体**（至多远处不可辨小点）、画面内文字或水印、画框。
+
+    ## 自检
+    仅 `image_prompt` 键；英文；50–75 词；无人像主体。
+""")
+
+USER_PROMPT_WALLPAPER = textwrap.dedent("""\
+    请生成**一条**新的英文 `image_prompt`（与寄语文案无关）。自由选题：自然或幻想风景、光色与构图每次尽量与常见默认不同。
 """)
 
 _FALLBACK_MESSAGES = (
@@ -60,8 +80,22 @@ _FALLBACK_MESSAGES = (
     "「生活不可能像你想象得那么好，但也不会像你想象得那么糟。」 -- 莫泊桑",
 )
 
+# Offline / LLM-fail: English scene blurbs for Pinscrape (wallpaper-board vibe, independent of motto).
+_FALLBACK_WALLPAPER_PROMPTS: tuple[str, ...] = (
+    "anime scenery wallpaper rolling green hills wildflowers watercolor painterly soft golden afternoon light distant cottage aesthetic landscape illustration dreamy vivid colors",
+    "lotus pond wooden boat lily pads calm green water illustration style peaceful nature wallpaper aesthetic vertical friendly soft light painterly anime landscape",
+    "coastal cliff ocean grass wildflowers anime landscape illustration golden hour aesthetic wallpaper painterly distant waves dreamy pastel sky wide vista",
+    "tree canopy looking up lush green leaves dappled sunlight forest path anime scenery wallpaper watercolor mood peaceful aesthetic illustration laptop wallpaper",
+    "village rooftops distant mountains morning mist watercolor anime landscape aesthetic wallpaper cozy countryside soft light painterly dreamy wide composition",
+)
+
 
 def fallback_motto_for_day() -> str:
     """Rotate through canned quotes when LLM is unavailable."""
     i = datetime.now().timetuple().tm_yday % len(_FALLBACK_MESSAGES)
     return _FALLBACK_MESSAGES[i]
+
+
+def fallback_wallpaper_image_prompt() -> str:
+    """Random English wallpaper prompt when image LLM is unavailable (Pinscrape still runs if enabled)."""
+    return random.choice(_FALLBACK_WALLPAPER_PROMPTS)

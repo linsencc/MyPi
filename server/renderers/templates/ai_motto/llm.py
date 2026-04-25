@@ -1,4 +1,4 @@
-"""OpenAI-compatible chat completion for motto + image_prompt."""
+"""OpenAI-compatible chat completion: motto (JSON) and wallpaper image_prompt (separate JSON)."""
 
 from __future__ import annotations
 
@@ -24,8 +24,11 @@ from .prompts import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT,
     SYSTEM_PROMPT,
+    SYSTEM_PROMPT_WALLPAPER,
     USER_PROMPT,
+    USER_PROMPT_WALLPAPER,
     fallback_motto_for_day,
+    fallback_wallpaper_image_prompt,
 )
 
 log = logging.getLogger(__name__)
@@ -55,8 +58,29 @@ def parse_llm_json_blob(raw: str) -> dict | None:
             obj, _end = dec.raw_decode(cleaned, i)
         except json.JSONDecodeError:
             continue
+        if isinstance(obj, dict) and "motto" in obj:
+            return obj
+    return None
+
+
+def parse_llm_wallpaper_json(raw: str) -> dict | None:
+    """Parse JSON with image_prompt (wallpaper-only LLM)."""
+    cleaned = re.sub(r"```json\s*|\s*```", "", raw).strip()
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(cleaned):
+        if ch != "{":
+            continue
+        try:
+            obj, _end = dec.raw_decode(cleaned, i)
+        except json.JSONDecodeError:
+            continue
         if isinstance(obj, dict) and any(
-            k in obj for k in ("motto", "image_prompt", "imagePrompt")
+            k in obj for k in ("image_prompt", "imagePrompt")
         ):
             return obj
     return None
@@ -102,12 +126,12 @@ def assistant_content_from_completion(body: object) -> str:
     return ""
 
 
-def call_llm_for_motto() -> tuple[str, str | None]:
-    """Returns (motto, image_prompt). image_prompt may be None."""
+def call_llm_for_motto() -> str:
+    """Returns Chinese motto line only (no image_prompt; wallpaper is generated separately)."""
     api_key = os.environ.get("MYPI_LLM_API_KEY", "").strip()
     if not api_key:
-        log.info("ai_motto: MYPI_LLM_API_KEY not set, motto fallback and no image")
-        return fallback_motto_for_day(), None
+        log.info("ai_motto: MYPI_LLM_API_KEY not set, motto fallback")
+        return fallback_motto_for_day()
 
     base_url = os.environ.get("MYPI_LLM_BASE_URL", DEFAULT_LLM_BASE_URL).rstrip("/")
     model = os.environ.get("MYPI_LLM_MODEL", DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
@@ -120,7 +144,6 @@ def call_llm_for_motto() -> tuple[str, str | None]:
     opener = build_llm_proxy_opener()
 
     motto = ""
-    image_prompt: str | None = None
     raw = ""
 
     for attempt in range(3):
@@ -158,7 +181,7 @@ def call_llm_for_motto() -> tuple[str, str | None]:
                 )
                 if attempt < 2:
                     continue
-                return fallback_motto_for_day(), None
+                return fallback_motto_for_day()
             log.info("ai_motto: LLM attempt %s raw %d chars", attempt + 1, len(raw))
 
             data = parse_llm_json_blob(raw)
@@ -170,18 +193,15 @@ def call_llm_for_motto() -> tuple[str, str | None]:
                 if attempt < 2:
                     continue
                 text = strip_thinking_blocks(raw)
-                return text or fallback_motto_for_day(), None
+                return text or fallback_motto_for_day()
 
             motto = (data.get("motto") or "").strip()
-            image_prompt = image_prompt_from_data(data)
             if not motto:
                 motto = strip_thinking_blocks(raw) or fallback_motto_for_day()
-            if motto and not image_prompt:
-                log.info("ai_motto: LLM returned motto but empty image_prompt; text-only layout")
 
             if motto and not is_motto_too_similar(motto, recent):
                 append_motto_to_recent(motto)
-                return motto, image_prompt
+                return motto
 
             if attempt < 2:
                 log.warning(
@@ -191,7 +211,7 @@ def call_llm_for_motto() -> tuple[str, str | None]:
                 continue
             log.warning("ai_motto: still similar after retries; using last motto")
             append_motto_to_recent(motto)
-            return motto, image_prompt
+            return motto
         except urllib.error.HTTPError as exc:
             err_body = ""
             try:
@@ -206,15 +226,84 @@ def call_llm_for_motto() -> tuple[str, str | None]:
             if attempt < 2 and exc.code in (408, 425, 429, 500, 502, 503, 504):
                 time.sleep(0.8 * (attempt + 1))
                 continue
-            return fallback_motto_for_day(), None
+            return fallback_motto_for_day()
         except json.JSONDecodeError as exc:
             log.warning("ai_motto: LLM response not JSON (attempt %s): %s", attempt + 1, exc)
             if attempt < 2:
                 continue
-            return fallback_motto_for_day(), None
+            return fallback_motto_for_day()
         except Exception as exc:
             log.warning("ai_motto: LLM call failed (attempt %s): %s", attempt + 1, exc)
             if attempt < 2:
                 time.sleep(0.5 * (attempt + 1))
                 continue
-            return fallback_motto_for_day(), None
+            return fallback_motto_for_day()
+
+
+def call_llm_for_wallpaper_image_prompt() -> str | None:
+    """English image_prompt for Pinscrape; independent of motto. None if no API key."""
+    api_key = os.environ.get("MYPI_LLM_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    base_url = os.environ.get("MYPI_LLM_BASE_URL", DEFAULT_LLM_BASE_URL).rstrip("/")
+    model = os.environ.get("MYPI_LLM_MODEL", DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+    timeout = int(os.environ.get("MYPI_LLM_TIMEOUT", str(DEFAULT_LLM_TIMEOUT)))
+    opener = build_llm_proxy_opener()
+
+    for attempt in range(2):
+        payload = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT_WALLPAPER},
+                {"role": "user", "content": USER_PROMPT_WALLPAPER},
+            ],
+            "max_tokens": 400,
+            "temperature": 0.98,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/mypi-frame",
+                "X-Title": "MyPi Digital Frame",
+            },
+            method="POST",
+        )
+
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                body = json.loads(resp.read())
+            raw = assistant_content_from_completion(body)
+            if not raw:
+                log.warning("ai_motto: wallpaper LLM empty content (attempt %s)", attempt + 1)
+                if attempt < 1:
+                    continue
+                break
+            data = parse_llm_wallpaper_json(raw)
+            ip = image_prompt_from_data(data) if data else None
+            if ip:
+                log.info("ai_motto: wallpaper image_prompt ok (%d chars)", len(ip))
+                return ip
+            log.warning("ai_motto: wallpaper LLM missing image_prompt (attempt %s)", attempt + 1)
+            if attempt < 1:
+                continue
+        except urllib.error.HTTPError as exc:
+            log.warning("ai_motto: wallpaper LLM HTTP %s", exc.code)
+            if attempt < 1 and exc.code in (408, 425, 429, 500, 502, 503, 504):
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            break
+        except Exception as exc:
+            log.warning("ai_motto: wallpaper LLM failed (attempt %s): %s", attempt + 1, exc)
+            if attempt < 1:
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            break
+
+    fb = fallback_wallpaper_image_prompt()
+    log.info("ai_motto: using offline wallpaper English prompt fallback for Pinscrape")
+    return fb
