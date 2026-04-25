@@ -36,12 +36,22 @@ log = logging.getLogger(__name__)
 
 # Minimum Han characters in the whole motto line (quote + attribution) to accept as Chinese copy.
 _MOTTO_MIN_HAN = 8
+# Japanese kana / halfwidth kana / Hangul: same CJK ideographs can appear in JP text; reject these scripts.
+_RE_JP_HIRAGANA = re.compile(r"[\u3040-\u309f]")
+_RE_JP_KATAKANA = re.compile(r"[\u30a0-\u30ff]")
+_RE_JP_KATAKANA_HW = re.compile(r"[\uff65-\uff9f]")
+_RE_HANGUL = re.compile(r"[\uac00-\ud7af]")
+_RE_CYRILLIC = re.compile(r"[\u0400-\u04ff]")
 
 
 def motto_is_acceptable_chinese(motto: str) -> bool:
-    """Reject lines that are mostly non-Chinese (e.g. English-only model slips)."""
+    """Reject non-简体中文 lines (English-only, Japanese with kana, Korean, etc.)."""
     motto = motto.strip()
     if not motto.startswith("「"):
+        return False
+    if _RE_JP_HIRAGANA.search(motto) or _RE_JP_KATAKANA.search(motto) or _RE_JP_KATAKANA_HW.search(motto):
+        return False
+    if _RE_HANGUL.search(motto) or _RE_CYRILLIC.search(motto):
         return False
     han = len(re.findall(r"[\u4e00-\u9fff]", motto))
     return han >= _MOTTO_MIN_HAN
@@ -223,9 +233,15 @@ def call_llm_for_motto() -> str:
             if not motto_is_acceptable_chinese(motto):
                 han = len(re.findall(r"[\u4e00-\u9fff]", motto))
                 log.warning(
-                    "ai_motto: motto failed Chinese check (Han=%s, len=%s), retrying",
+                    "ai_motto: motto failed Chinese check (Han=%s, len=%s, has_kana=%s, has_hangul=%s), retrying",
                     han,
                     len(motto),
+                    bool(
+                        _RE_JP_HIRAGANA.search(motto)
+                        or _RE_JP_KATAKANA.search(motto)
+                        or _RE_JP_KATAKANA_HW.search(motto)
+                    ),
+                    bool(_RE_HANGUL.search(motto) or _RE_CYRILLIC.search(motto)),
                 )
                 append_chinese_extra = True
                 if attempt < 2:
