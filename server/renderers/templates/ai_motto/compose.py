@@ -307,7 +307,7 @@ def layout_motto_on_scrim_body(
     """Compute 每日寄语配图分支同款竖排与描边参数；``lines`` 为已定宽的物理行。"""
     scale = min(canvas_w, canvas_h) / 600
     # 与 compose_motto 配图分支一致：靠下，落在 scrim 压暗更实的一段。
-    text_zone_center = int(canvas_h * 0.76)
+    text_zone_center = int(canvas_h * 0.78)
     footer_pad = max(20, int(26 * scale))
     footer_reserve = canvas_h - footer_pad - int(18 * scale)
 
