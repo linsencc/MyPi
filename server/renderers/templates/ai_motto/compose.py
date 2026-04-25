@@ -513,8 +513,7 @@ def compose_motto(
             canvas_h - scrim_start,
             scrim_rgb=(16, 18, 24),
             default_max_opacity=0.95,
-            # 略低于默认 1.38：同高度下 alpha 更大，从条顶往下更早进入可见压暗。
-            curve_exp=1.12,
+            curve_exp=0.5,
         )
         draw = ImageDraw.Draw(img)
 
