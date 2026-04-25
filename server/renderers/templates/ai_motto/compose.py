@@ -137,6 +137,9 @@ def _draw_motto_footer(
 # 不含「」：否则易在直角引号处断行，导致 closing 「 单独成行。
 _MOTTO_BREAK_AFTER = frozenset("，、；。：！？．!?,)）】』〉》…—　 \t")
 
+# 若硬拆后剩余仅 1～5 个字符，整段并入当前行（略超 max_chars），避免「…成之」+ 下行「事。」这类孤字尾行。
+_MOTTO_ORPHAN_TAIL_SOFT = 5
+
 
 def _wrap_segment_greedy(segment: str, max_chars: int, max_lines: int) -> list[str]:
     """Pack segment into lines up to max_lines; prefer breaks after punctuation within max_chars."""
@@ -150,6 +153,10 @@ def _wrap_segment_greedy(segment: str, max_chars: int, max_lines: int) -> list[s
     while pos < len(s) and len(lines) < max_lines:
         remain = len(s) - pos
         if remain <= max_chars:
+            lines.append(s[pos:])
+            pos = len(s)
+            break
+        if remain <= max_chars + _MOTTO_ORPHAN_TAIL_SOFT:
             lines.append(s[pos:])
             pos = len(s)
             break
@@ -499,7 +506,7 @@ def compose_motto(
         img.paste(fitted, (0, 0))
 
         # 渐变从画面中下开始，底部高峰值压暗；正文靠下落在实带内。
-        scrim_start = int(canvas_h * 0.40)
+        scrim_start = int(canvas_h * 0.60)
         overlay_bottom_scrim(
             img,
             scrim_start,
