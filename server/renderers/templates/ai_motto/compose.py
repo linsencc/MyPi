@@ -13,6 +13,13 @@ from renderers.templates.cjk_font import _load_cjk_font
 from renderers.templates.cn_date import cn_date_str
 from renderers.templates.photo_scrim import fit_image_cover, overlay_bottom_scrim
 
+_MOTTO_REGULAR_CANDIDATES: tuple[tuple[Path, int], ...] = (
+    (Path(r"C:\Windows\Fonts\msyh.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"), 0),
+)
+
 _MOTTO_BOLD_CANDIDATES: tuple[tuple[Path, int], ...] = (
     (Path(r"C:\Windows\Fonts\msyhbd.ttc"), 0),
     (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"), 0),
@@ -33,7 +40,13 @@ def _try_truetype(path: Path, size: int, index: int = 0) -> ImageFont.FreeTypeFo
 
 
 def load_motto_quote_font(size: int) -> tuple[ImageFont.FreeTypeFont, bool]:
-    """Return (font, has_natural_bold). If False, draw with stroke for legibility on photos."""
+    """Return (font, has_natural_bold).
+
+    Default prefers **regular** weight (朴素 on scrim). Set ``MYPI_MOTTO_QUOTE_BOLD=1`` to force bold + heavy stroke.
+    ``MYPI_MOTTO_FONT`` / ``MYPI_MOTTO_FONT_BOLD`` still override when set.
+    """
+    force_bold = os.environ.get("MYPI_MOTTO_QUOTE_BOLD", "").strip().lower() in ("1", "true", "yes", "on")
+
     b = os.environ.get("MYPI_MOTTO_FONT_BOLD", "").strip()
     if b:
         f = _try_truetype(Path(b), size)
@@ -44,6 +57,13 @@ def load_motto_quote_font(size: int) -> tuple[ImageFont.FreeTypeFont, bool]:
         f = _try_truetype(Path(m), size)
         if f is not None:
             return f, False
+
+    if not force_bold:
+        for p, idx in _MOTTO_REGULAR_CANDIDATES:
+            f = _try_truetype(p, size, index=idx)
+            if f is not None:
+                return f, False
+
     for p, idx in _MOTTO_BOLD_CANDIDATES:
         f = _try_truetype(p, size, index=idx)
         if f is not None:
@@ -56,8 +76,12 @@ _TEXT_COLOR = (30, 32, 36)
 _SECONDARY_COLOR = (110, 105, 98)
 _SUBTLE_COLOR = (150, 145, 138)
 _ACCENT_COLOR = (85, 80, 72)
+# Strong contrast (used when MYPI_MOTTO_QUOTE_BOLD=1 or synthetic bold).
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
+# Plain / 朴素：略亮的字色 + 灰褐细描边，避免粗黑边「海报感」。
+_QUOTE_ON_SCRIM_FILL_PLAIN = (252, 250, 245)
+_QUOTE_ON_SCRIM_STROKE_PLAIN = (92, 88, 82)
 _FOOTER_ON_SCRIM_A = (188, 182, 170)
 _FOOTER_ON_SCRIM_B = (138, 132, 122)
 
@@ -250,7 +274,8 @@ def compose_motto(
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
             ink_heights.append(bb[3] - bb[1])
-        line_step = max(ink_heights) + max(5, int(size_px * 0.2))
+        line_gap = int(size_px * (0.26 if not quote_bold else 0.2))
+        line_step = max(ink_heights) + max(6, line_gap)
         block_h = len(lines) * line_step - max(0, int(size_px * 0.06))
         y0 = text_zone_center - block_h // 2
         footer_reserve = canvas_h - max(18, int(24 * scale)) - int(14 * scale)
@@ -258,7 +283,13 @@ def compose_motto(
         if last_bottom > footer_reserve:
             y0 = max(int(canvas_h * 0.12), footer_reserve - last_bottom + y0)
 
-        stroke_w = max(1, int(1.75 * scale)) if not quote_bold else max(1, int(1.55 * scale))
+        if quote_bold:
+            q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL, _QUOTE_ON_SCRIM_STROKE
+            stroke_w = max(1, int(1.55 * scale))
+        else:
+            q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
+            # 细描边：比旧版粗黑边淡得多，但仍利于 e-ink / 复杂底图辨认。
+            stroke_w = max(1, int(0.42 * scale))
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
@@ -267,10 +298,10 @@ def compose_motto(
             draw.text(
                 (tx, ty),
                 ln,
-                fill=_QUOTE_ON_SCRIM_FILL,
+                fill=q_fill,
                 font=font,
                 stroke_width=stroke_w,
-                stroke_fill=_QUOTE_ON_SCRIM_STROKE,
+                stroke_fill=q_stroke,
             )
 
         footer_y = canvas_h - max(18, int(24 * scale))
@@ -293,11 +324,13 @@ def compose_motto(
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
             ink_heights.append(bb[3] - bb[1])
-        line_step = max(ink_heights) + max(5, int(size_px * 0.22))
+        line_gap2 = int(size_px * (0.24 if not quote_bold else 0.22))
+        line_step = max(ink_heights) + max(6, line_gap2)
         block_h = len(lines) * line_step - max(0, int(size_px * 0.06))
         y0 = bar_y + bar_h + int(22 * scale)
 
         tw_off = max(1, int(1.0 * scale))
+        text_fill = _TEXT_COLOR if quote_bold else (42, 44, 48)
         for k, ln in enumerate(lines):
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
@@ -305,9 +338,9 @@ def compose_motto(
             ty = y0 + k * line_step - bbox[1]
             if quote_bold:
                 draw.text((tx + tw_off, ty + tw_off), ln, fill=(228, 226, 222), font=font)
-                draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
+                draw.text((tx, ty), ln, fill=text_fill, font=font)
             else:
-                draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
+                draw.text((tx, ty), ln, fill=text_fill, font=font)
 
         footer_y = y0 + len(lines) * line_step + max(10, int(16 * scale))
         _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=False)
