@@ -1,18 +1,24 @@
-"""Remote art for 每日寄语: Pinscrape only; failure → template uses ``offline_motto_art``.
+"""Remote art for 每日寄语: optional Pinterest **board page** parse, then Pinscrape keyword search.
 
-Pinscrape: ``MYPI_MOTTO_PINSCRAPE`` (set ``0``/``off`` to skip and use offline only), ``MYPI_PINSCRAPE_*``,
-``MYPI_LLM_PROXY`` / ``HTTPS_PROXY`` for requests (see ``net.http_proxy_url``).
+Board: default ``https://www.pinterest.com/elliotprl/wallpaper/`` (override or disable with ``MYPI_MOTTO_BOARD_URL``).
+Pinscrape search: ``MYPI_MOTTO_PINSCRAPE`` (``0``/``off`` skips keyword path only; board fetch uses stdlib urllib).
+``MYPI_PINSCRAPE_*``, ``MYPI_LLM_PROXY`` / ``HTTPS_PROXY`` (see ``net.http_proxy_url``).
 Offline: ``MYPI_MOTTO_OFFLINE_IMAGE``. Images honor ``MYPI_MOTTO_IMAGE_NO_PROXY`` via ``build_motto_image_opener``.
+
+Note: pinscrape's ``Pinterest.get_pin_details`` does not return image URLs; board images are parsed from the public HTML/JSON embed.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import random
 import re
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from PIL import Image, ImageEnhance, ImageOps, ImageStat
@@ -23,6 +29,133 @@ from renderers.templates.photo_scrim import download_image_url, to_full_color_rg
 log = logging.getLogger(__name__)
 
 _PINSCRAPE_IMPORT_OK: bool | None = None
+
+# Public board used as default wallpaper pool (see prompts / product spec).
+_DEFAULT_MOTTO_BOARD_URL = "https://www.pinterest.com/elliotprl/wallpaper/"
+_PINIMG_ORIG_RE = re.compile(
+    r"https://i\.pinimg\.com/originals/[^\"'\\s<>]+",
+    re.IGNORECASE,
+)
+
+
+def _motto_pinterest_board_url() -> str | None:
+    """Board page to scrape for pin CDN URLs. Explicit empty / 0 / off disables."""
+    if "MYPI_MOTTO_BOARD_URL" in os.environ:
+        v = os.environ["MYPI_MOTTO_BOARD_URL"].strip()
+        if not v or v.lower() in ("0", "false", "no", "off"):
+            return None
+        return _normalize_pinterest_board_url(v)
+    return _DEFAULT_MOTTO_BOARD_URL
+
+
+def _normalize_pinterest_board_url(url: str) -> str:
+    u = url.strip().split("?")[0].rstrip("/")
+    if not u.startswith("http"):
+        u = "https://" + u.lstrip("/")
+    return u + "/" if not u.endswith("/") else u
+
+
+def _collect_orig_urls_from_pinterest_json(obj: object, out: list[str]) -> None:
+    """Depth-first walk for pin ``images.orig.url`` blobs in Pinterest Redux JSON."""
+    if isinstance(obj, dict):
+        if "images" in obj and isinstance(obj["images"], dict):
+            orig = obj["images"].get("orig")
+            if isinstance(orig, dict):
+                u = orig.get("url")
+                if isinstance(u, str) and "pinimg.com" in u:
+                    out.append(u)
+            elif isinstance(orig, list):
+                for it in orig:
+                    if isinstance(it, dict):
+                        u = it.get("url")
+                        if isinstance(u, str) and "pinimg.com" in u:
+                            out.append(u)
+        for v in obj.values():
+            _collect_orig_urls_from_pinterest_json(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _collect_orig_urls_from_pinterest_json(v, out)
+
+
+def _parse_board_html_for_pin_urls(html: str) -> list[str]:
+    urls: list[str] = []
+    for sid in ("__PWS_INITIAL_PROPS__", "__PWS_DATA__"):
+        pat = re.compile(
+            rf'<script[^>]*id="{re.escape(sid)}"[^>]*>(.*?)</script>',
+            re.DOTALL | re.IGNORECASE,
+        )
+        for m in pat.finditer(html):
+            raw = m.group(1).strip()
+            if not raw or raw[0] not in "{[":
+                continue
+            try:
+                j = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            _collect_orig_urls_from_pinterest_json(j, urls)
+    for u in _PINIMG_ORIG_RE.findall(html):
+        urls.append(u)
+    seen: set[str] = set()
+    out: list[str] = []
+    for u in urls:
+        u2 = u.split("\\")[0].strip()
+        if u2 and u2 not in seen:
+            seen.add(u2)
+            out.append(u2)
+    return out
+
+
+def _fetch_pinterest_board_html(board_url: str, opener: urllib.request.OpenerDirector) -> str | None:
+    req = urllib.request.Request(
+        board_url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        method="GET",
+    )
+    try:
+        with opener.open(req, timeout=40) as resp:
+            raw = resp.read()
+        if len(raw) > 4_000_000:
+            raw = raw[:4_000_000]
+        return raw.decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        log.warning("ai_motto: board page HTTP %s", exc.code)
+        return None
+    except Exception as exc:
+        log.warning("ai_motto: board page fetch failed: %s", exc)
+        return None
+
+
+def _try_download_pin_urls(urls: list[str], opener: urllib.request.OpenerDirector) -> Image.Image | None:
+    if not urls:
+        return None
+    rng = random.Random(time.time_ns())
+    urls_try = list(urls)
+    rng.shuffle(urls_try)
+    pin_headers = {"Referer": "https://www.pinterest.com/", "Accept": "image/avif,image/webp,*/*;q=0.8"}
+    for url in urls_try[:48]:
+        if not url or "pinimg.com" not in url:
+            continue
+        log.info("ai_motto: pin candidate url=%s", url[:120])
+        img = download_image_url(
+            url,
+            opener,
+            log_prefix="ai_motto",
+            request_headers=pin_headers,
+        )
+        if img is None:
+            continue
+        if rgb_looks_grayscale_photo(img):
+            log.info("ai_motto: skipped grayscale image, trying next url")
+            continue
+        return img
+    return None
 
 # Glue words / meta-terms to skip when turning LLM English into short search tags (keep landscape nouns).
 _TAG_STOPWORDS = frozenset({
@@ -186,8 +319,8 @@ def _pinscrape_query_variants(image_prompt: str) -> list[str]:
     return out
 
 
-def _fetch_via_pinscrape(image_prompt: str, _motto: str) -> Image.Image | None:
-    """Pinterest image URLs via pinscrape (requests); download via urllib opener (proxy-aware)."""
+def _fetch_via_pinscrape(image_prompt: str, opener: urllib.request.OpenerDirector) -> Image.Image | None:
+    """Pinterest image URLs via pinscrape ``search()``; download via urllib opener (proxy-aware)."""
     if not _pinscrape_import_ok():
         log.warning("ai_motto: pinscrape not installed; pip install pinscrape (see requirements-pinscrape.txt)")
         return None
@@ -230,32 +363,11 @@ def _fetch_via_pinscrape(image_prompt: str, _motto: str) -> Image.Image | None:
         log.warning("ai_motto: pinscrape returned no URLs after %d query variant(s)", len(queries))
         return None
 
-    opener = build_motto_image_opener()
-    rng = random.Random(time.time_ns())
-    urls_try = list(urls)
-    rng.shuffle(urls_try)
-    pin_headers = {"Referer": "https://www.pinterest.com/", "Accept": "image/avif,image/webp,*/*;q=0.8"}
-
-    for url in urls_try:
-        if not url:
-            continue
-        url_s = url if isinstance(url, str) else str(url)
-        log.info("ai_motto: pinscrape image candidate url=%s", url_s[:120])
-        img = download_image_url(
-            url_s,
-            opener,
-            log_prefix="ai_motto",
-            request_headers=pin_headers,
-        )
-        if img is None:
-            continue
-        if rgb_looks_grayscale_photo(img):
-            log.info("ai_motto: skipped grayscale pinscrape image, trying next url")
-            continue
-        return img
-
-    log.warning("ai_motto: no pinscrape image downloaded after trying %d urls", len(urls_try))
-    return None
+    urls_try = [str(u) for u in urls if u]
+    img = _try_download_pin_urls(urls_try, opener)
+    if img is None:
+        log.warning("ai_motto: no pinscrape image downloaded after trying %d urls", len(urls_try))
+    return img
 
 
 def rgb_looks_grayscale_photo(img: Image.Image) -> bool:
@@ -288,7 +400,19 @@ def fetch_web_motto_image(
     _height: int,
     _motto: str,
 ) -> Image.Image | None:
-    """Pinscrape only; width/height kept for call-site compatibility (offline sizing uses same values in template). On failure return ``None`` — template uses ``offline_motto_art``."""
+    """Try Pinterest board HTML first, then pinscrape keyword search. On failure return ``None`` — template uses ``offline_motto_art``."""
+    opener = build_motto_image_opener()
+    bu = _motto_pinterest_board_url()
+    if bu:
+        html = _fetch_pinterest_board_html(bu, opener)
+        if html:
+            cand = _parse_board_html_for_pin_urls(html)
+            log.info("ai_motto: board %r → %d pinimg candidates", bu[:72], len(cand))
+            art = _try_download_pin_urls(cand, opener)
+            if art is not None:
+                return art
+        log.info("ai_motto: board path yielded no usable image; trying pinscrape search")
+
     if not _pinscrape_should_try():
         flag = os.environ.get("MYPI_MOTTO_PINSCRAPE", "").strip().lower()
         if flag in ("0", "false", "no", "off"):
@@ -296,7 +420,7 @@ def fetch_web_motto_image(
         else:
             log.info("ai_motto: pinscrape not installed; using offline wallpaper (pip install pinscrape)")
         return None
-    return _fetch_via_pinscrape(image_prompt, _motto)
+    return _fetch_via_pinscrape(image_prompt, opener)
 
 
 def offline_motto_art(gen_w: int, gen_h: int) -> Image.Image:

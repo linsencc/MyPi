@@ -88,7 +88,8 @@ def _draw_motto_footer(
 
 # Prefer breaking after these (CJK / ASCII punctuation); avoid ugly mid-word cuts where possible.
 # 不含 ASCII '-'，避免把 motto 里的「 -- 」拆断到两行。
-_MOTTO_BREAK_AFTER = frozenset("，、；。：！？．!?,)）】」』〉》…—　 \t")
+# 不含「」：否则易在直角引号处断行，导致 closing 「 单独成行。
+_MOTTO_BREAK_AFTER = frozenset("，、；。：！？．!?,)）】』〉》…—　 \t")
 
 
 def _wrap_segment_greedy(segment: str, max_chars: int, max_lines: int) -> list[str]:
@@ -113,6 +114,9 @@ def _wrap_segment_greedy(segment: str, max_chars: int, max_lines: int) -> list[s
             if j <= pos:
                 break
             if s[j - 1] in _MOTTO_BREAK_AFTER:
+                # 勿在句末标点（。！？）与紧随的 \u300d 之间断行，避免 closing bracket alone on next line.
+                if j < len(s) and s[j] == "」" and s[j - 1] in "。！？":
+                    continue
                 best = j
                 break
         lines.append(s[pos:best])
@@ -171,6 +175,26 @@ def _split_attribution_to_own_line(lines: list[str]) -> list[str]:
     return out
 
 
+def _fix_lonely_closing_corner(lines: list[str]) -> list[str]:
+    """Merge a line that is only the closing 「」 onto the previous line (layout safety net)."""
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if i + 1 < len(lines) and lines[i + 1].strip() == "」":
+            out.append(lines[i].rstrip() + "」")
+            i += 2
+            continue
+        out.append(lines[i])
+        i += 1
+    return out
+
+
+def _motto_wrap_pipeline(motto: str, max_chars: int, max_lines: int) -> list[str]:
+    return _fix_lonely_closing_corner(
+        _split_attribution_to_own_line(_wrap_motto_lines(motto, max_chars=max_chars, max_lines=max_lines))
+    )
+
+
 def compose_motto(
     motto: str,
     art: Image.Image | None,
@@ -203,9 +227,7 @@ def compose_motto(
             max_chars = (n + 1) // 2
         else:
             max_chars = raw_max
-        lines = _split_attribution_to_own_line(
-            _wrap_motto_lines(motto, max_chars=max_chars, max_lines=6)
-        )
+        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
         ink_heights: list[int] = []
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
@@ -248,9 +270,7 @@ def compose_motto(
         size_px = max(26, int(36 * scale))
         font, quote_bold = load_motto_quote_font(size_px)
         max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.02)))
-        lines = _split_attribution_to_own_line(
-            _wrap_motto_lines(motto, max_chars=max_chars, max_lines=6)
-        )
+        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
         ink_heights: list[int] = []
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
