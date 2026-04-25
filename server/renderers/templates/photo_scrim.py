@@ -90,7 +90,7 @@ def overlay_bottom_scrim(
         max_opacity = float(raw)
     except ValueError:
         max_opacity = default_max_opacity
-    max_opacity = max(0.38, min(0.92, max_opacity))
+    max_opacity = max(0.38, min(0.98, max_opacity))
     curve_exp = max(1.05, min(2.2, float(curve_exp)))
     w = canvas.width
     strip = Image.new("RGB", (w, fade_h), scrim_rgb)

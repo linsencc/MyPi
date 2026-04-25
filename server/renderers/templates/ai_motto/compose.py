@@ -307,7 +307,7 @@ def layout_motto_on_scrim_body(
     """Compute 每日寄语配图分支同款竖排与描边参数；``lines`` 为已定宽的物理行。"""
     scale = min(canvas_w, canvas_h) / 600
     # 与 compose_motto 配图分支一致：靠下，落在 scrim 压暗更实的一段。
-    text_zone_center = int(canvas_h * 0.718)
+    text_zone_center = int(canvas_h * 0.738)
     footer_pad = max(20, int(26 * scale))
     footer_reserve = canvas_h - footer_pad - int(18 * scale)
 
@@ -498,14 +498,14 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        # 渐变起点高 + 深底色与高峰值透明度，压暗带更实，白字与亮底分离更好。
-        scrim_start = int(canvas_h * 0.28)
+        # 渐变从画面中下开始，底部高峰值压暗；正文靠下落在实带内。
+        scrim_start = int(canvas_h * 0.40)
         overlay_bottom_scrim(
             img,
             scrim_start,
             canvas_h - scrim_start,
             scrim_rgb=(16, 18, 24),
-            default_max_opacity=0.88,
+            default_max_opacity=0.95,
             curve_exp=1.30,
         )
         draw = ImageDraw.Draw(img)
