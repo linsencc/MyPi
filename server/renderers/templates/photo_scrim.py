@@ -82,6 +82,7 @@ def overlay_bottom_scrim(
     scrim_rgb: tuple[int, int, int] = SCRIM_RGB,
     max_opacity_env: str = "MYPI_MOTTO_SCRIM_MAX",
     default_max_opacity: float = 0.76,
+    curve_exp: float = 1.38,
 ) -> None:
     """Vertical gradient from transparent at top of strip to dark at bottom."""
     raw = os.environ.get(max_opacity_env, str(default_max_opacity)).strip()
@@ -90,13 +91,14 @@ def overlay_bottom_scrim(
     except ValueError:
         max_opacity = default_max_opacity
     max_opacity = max(0.38, min(0.92, max_opacity))
+    curve_exp = max(1.05, min(2.2, float(curve_exp)))
     w = canvas.width
     strip = Image.new("RGB", (w, fade_h), scrim_rgb)
     mask = Image.new("L", (w, fade_h))
     draw_mask = ImageDraw.Draw(mask)
     for y in range(fade_h):
         t = y / fade_h if fade_h else 0.0
-        alpha = int(255 * max_opacity * (t**1.38))
+        alpha = int(255 * max_opacity * (t**curve_exp))
         draw_mask.line([(0, y), (w - 1, y)], fill=alpha)
     canvas.paste(strip, (0, y_start), mask=mask)
 

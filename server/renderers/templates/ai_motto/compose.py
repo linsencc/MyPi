@@ -80,11 +80,11 @@ _ACCENT_COLOR = (85, 80, 72)
 # Strong contrast (used when MYPI_MOTTO_QUOTE_BOLD=1 or synthetic bold).
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
-# Plain / 朴素：略亮的字色 + 灰褐细描边，避免粗黑边「海报感」。
-_QUOTE_ON_SCRIM_FILL_PLAIN = (252, 250, 245)
-_QUOTE_ON_SCRIM_STROKE_PLAIN = (92, 88, 82)
-_FOOTER_ON_SCRIM_A = (188, 182, 170)
-_FOOTER_ON_SCRIM_B = (138, 132, 122)
+# Plain / 朴素：略亮字色 + 偏暖灰细描边，比深灰边更柔和、少「描边感」。
+_QUOTE_ON_SCRIM_FILL_PLAIN = (253, 251, 247)
+_QUOTE_ON_SCRIM_STROKE_PLAIN = (118, 112, 104)
+_FOOTER_ON_SCRIM_A = (176, 170, 162)
+_FOOTER_ON_SCRIM_B = (128, 122, 116)
 
 # Between closing 「」 and ASCII ` -- ` (display): one ideographic space reads wider than a single ASCII space.
 _MOTTO_QUOTE_TO_DASH_GAP = "\u3000"
@@ -113,10 +113,11 @@ def _draw_motto_footer(
     scale: float,
     *,
     on_scrim: bool,
+    attr_suffix: str = "— 每日寄语",
 ) -> None:
     small = _load_cjk_font(max(10, int(12 * scale)))
     date_str = cn_date_str()
-    attr_str = "— 每日寄语"
+    attr_str = attr_suffix
     spacer = int(20 * scale)
     db = draw.textbbox((0, 0), date_str, font=small)
     ab = draw.textbbox((0, 0), attr_str, font=small)
@@ -289,11 +290,19 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        scrim_start = int(canvas_h * 0.36)
-        overlay_bottom_scrim(img, scrim_start, canvas_h - scrim_start)
+        scrim_start = int(canvas_h * 0.38)
+        overlay_bottom_scrim(
+            img,
+            scrim_start,
+            canvas_h - scrim_start,
+            scrim_rgb=(30, 31, 36),
+            default_max_opacity=0.66,
+            curve_exp=1.52,
+        )
         draw = ImageDraw.Draw(img)
 
-        text_zone_center = int(canvas_h * 0.702)
+        # 略上移，减轻「出处与页脚之间一大块空 scrim」的松散感。
+        text_zone_center = int(canvas_h * 0.678)
         size_px = max(21, int(30 * scale))
         font, quote_bold = load_motto_quote_font(size_px)
         size_attrib = max(14, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO))
@@ -308,14 +317,15 @@ def compose_motto(
             max_chars = raw_max
         lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
         ink_heights = _ink_heights_for_motto_lines(lines, font, font_attrib, draw)
-        line_gap = int(size_px * (0.28 if not quote_bold else 0.2))
+        line_gap = int(size_px * (0.32 if not quote_bold else 0.2))
         line_step = max(ink_heights) + max(6, line_gap)
         attrib_idx = _first_attribution_line_index(lines)
-        attrib_air = int(size_px * (0.62 if not quote_bold else 0.45))
+        attrib_air = int(size_px * (0.48 if not quote_bold else 0.42))
         _air = attrib_air if attrib_idx is not None else 0
         block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air - max(0, int(size_px * 0.05))
         y0 = text_zone_center - block_h // 2
-        footer_reserve = canvas_h - max(18, int(24 * scale)) - int(14 * scale)
+        footer_pad = max(20, int(26 * scale))
+        footer_reserve = canvas_h - footer_pad - int(18 * scale)
         last_bottom = (
             y0
             + (len(lines) - 1) * line_step
@@ -330,8 +340,8 @@ def compose_motto(
             stroke_w = max(1, int(1.55 * scale))
         else:
             q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
-            # 细描边：比旧版粗黑边淡得多，但仍利于 e-ink / 复杂底图辨认。
-            stroke_w = max(1, int(0.42 * scale))
+            # 更细的暖灰描边：朴素、少海报感；e-ink 仍靠略抬的 scrim 对比兜底。
+            stroke_w = max(1, int(0.32 * scale))
         for k, ln in enumerate(lines):
             fk = _quote_font_for_line(ln, font, font_attrib)
             bbox = draw.textbbox((0, 0), ln, font=fk)
@@ -349,7 +359,7 @@ def compose_motto(
                 stroke_fill=q_stroke,
             )
 
-        footer_y = canvas_h - max(18, int(24 * scale))
+        footer_y = canvas_h - footer_pad
         _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=True)
 
     else:
@@ -368,10 +378,10 @@ def compose_motto(
         max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.02)))
         lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
         ink_heights = _ink_heights_for_motto_lines(lines, font, font_attrib, draw)
-        line_gap2 = int(size_px * (0.26 if not quote_bold else 0.22))
+        line_gap2 = int(size_px * (0.30 if not quote_bold else 0.22))
         line_step = max(ink_heights) + max(6, line_gap2)
         attrib_idx2 = _first_attribution_line_index(lines)
-        attrib_air2 = int(size_px * (0.52 if not quote_bold else 0.38))
+        attrib_air2 = int(size_px * (0.46 if not quote_bold else 0.38))
         _air2 = attrib_air2 if attrib_idx2 is not None else 0
         block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air2 - max(0, int(size_px * 0.06))
         y0 = bar_y + bar_h + int(22 * scale)
