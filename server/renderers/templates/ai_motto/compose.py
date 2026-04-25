@@ -505,8 +505,8 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        # 默认观感平衡：半屏后起渐变；p 略小于 1 抬高正文所在中段 alpha；底色深但不至纯黑条。
-        scrim_start = int(canvas_h * 0.50)
+        # 渐变从 0.3 屏高起（试看：上半更早进入压暗）；p 略小于 1 抬高中段 alpha。
+        scrim_start = int(canvas_h * 0.30)
         overlay_bottom_scrim(
             img,
             scrim_start,
