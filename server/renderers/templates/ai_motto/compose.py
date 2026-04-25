@@ -15,9 +15,10 @@ from renderers.templates.photo_scrim import fit_image_cover, overlay_bottom_scri
 
 _MOTTO_REGULAR_CANDIDATES: tuple[tuple[Path, int], ...] = (
     (Path(r"C:\Windows\Fonts\msyh.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc"), 0),
     (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"), 0),
     (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"), 0),
-    (Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"), 0),
 )
 
 _MOTTO_BOLD_CANDIDATES: tuple[tuple[Path, int], ...] = (
@@ -237,6 +238,14 @@ def _motto_wrap_pipeline(motto: str, max_chars: int, max_lines: int) -> list[str
     )
 
 
+def _first_attribution_line_index(lines: list[str]) -> int | None:
+    """Index of first line that is the `-- 出处` row (after split), for extra vertical gap above it."""
+    for i, ln in enumerate(lines):
+        if ln.lstrip().startswith("--"):
+            return i
+    return None
+
+
 def compose_motto(
     motto: str,
     art: Image.Image | None,
@@ -247,7 +256,7 @@ def compose_motto(
     draw = ImageDraw.Draw(img)
     scale = min(canvas_w, canvas_h) / 600
     cx = canvas_w // 2
-    margin = max(28, int(canvas_w * 0.055))
+    margin = max(28, int(canvas_w * 0.058))
 
     if art:
         fitted = fit_image_cover(art, canvas_w, canvas_h)
@@ -258,8 +267,8 @@ def compose_motto(
         overlay_bottom_scrim(img, scrim_start, canvas_h - scrim_start)
         draw = ImageDraw.Draw(img)
 
-        text_zone_center = int(canvas_h * 0.715)
-        size_px = max(22, int(32 * scale))
+        text_zone_center = int(canvas_h * 0.702)
+        size_px = max(21, int(30 * scale))
         font, quote_bold = load_motto_quote_font(size_px)
         raw_max = max(8, int((canvas_w - margin * 2) / (size_px * 1.02)))
         n = len(motto)
@@ -274,12 +283,20 @@ def compose_motto(
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
             ink_heights.append(bb[3] - bb[1])
-        line_gap = int(size_px * (0.26 if not quote_bold else 0.2))
+        line_gap = int(size_px * (0.28 if not quote_bold else 0.2))
         line_step = max(ink_heights) + max(6, line_gap)
-        block_h = len(lines) * line_step - max(0, int(size_px * 0.06))
+        attrib_idx = _first_attribution_line_index(lines)
+        attrib_air = int(size_px * (0.62 if not quote_bold else 0.45))
+        _air = attrib_air if attrib_idx is not None else 0
+        block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air - max(0, int(size_px * 0.05))
         y0 = text_zone_center - block_h // 2
         footer_reserve = canvas_h - max(18, int(24 * scale)) - int(14 * scale)
-        last_bottom = y0 + (len(lines) - 1) * line_step + max(ink_heights)
+        last_bottom = (
+            y0
+            + (len(lines) - 1) * line_step
+            + (attrib_air if attrib_idx is not None and (len(lines) - 1) >= attrib_idx else 0)
+            + max(ink_heights)
+        )
         if last_bottom > footer_reserve:
             y0 = max(int(canvas_h * 0.12), footer_reserve - last_bottom + y0)
 
@@ -294,7 +311,8 @@ def compose_motto(
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
             tx = (canvas_w - tw) // 2
-            ty = y0 + k * line_step - bbox[1]
+            y_shift = attrib_air if attrib_idx is not None and k >= attrib_idx else 0
+            ty = y0 + k * line_step + y_shift - bbox[1]
             draw.text(
                 (tx, ty),
                 ln,
@@ -324,9 +342,12 @@ def compose_motto(
         for ln in lines:
             bb = draw.textbbox((0, 0), ln, font=font)
             ink_heights.append(bb[3] - bb[1])
-        line_gap2 = int(size_px * (0.24 if not quote_bold else 0.22))
+        line_gap2 = int(size_px * (0.26 if not quote_bold else 0.22))
         line_step = max(ink_heights) + max(6, line_gap2)
-        block_h = len(lines) * line_step - max(0, int(size_px * 0.06))
+        attrib_idx2 = _first_attribution_line_index(lines)
+        attrib_air2 = int(size_px * (0.52 if not quote_bold else 0.38))
+        _air2 = attrib_air2 if attrib_idx2 is not None else 0
+        block_h = (len(lines) - 1) * line_step + max(ink_heights) + _air2 - max(0, int(size_px * 0.06))
         y0 = bar_y + bar_h + int(22 * scale)
 
         tw_off = max(1, int(1.0 * scale))
@@ -335,7 +356,8 @@ def compose_motto(
             bbox = draw.textbbox((0, 0), ln, font=font)
             tw = bbox[2] - bbox[0]
             tx = (canvas_w - tw) // 2
-            ty = y0 + k * line_step - bbox[1]
+            y_shift = attrib_air2 if attrib_idx2 is not None and k >= attrib_idx2 else 0
+            ty = y0 + k * line_step + y_shift - bbox[1]
             if quote_bold:
                 draw.text((tx + tw_off, ty + tw_off), ln, fill=(228, 226, 222), font=font)
                 draw.text((tx, ty), ln, fill=text_fill, font=font)
