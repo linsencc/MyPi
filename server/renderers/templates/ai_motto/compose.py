@@ -80,9 +80,9 @@ _ACCENT_COLOR = (85, 80, 72)
 # Strong contrast (used when MYPI_MOTTO_QUOTE_BOLD=1 or synthetic bold).
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
-# Plain / 朴素：略偏乳白 + 偏浅暖灰描边（弱于上一版，仍略压字边对比）。
+# Plain / 朴素：略偏乳白 + 中等暖灰描边（亮底花簇上仍要分得开字）。
 _QUOTE_ON_SCRIM_FILL_PLAIN = (250, 248, 242)
-_QUOTE_ON_SCRIM_STROKE_PLAIN = (88, 84, 78)
+_QUOTE_ON_SCRIM_STROKE_PLAIN = (68, 64, 58)
 _FOOTER_ON_SCRIM_A = (188, 182, 174)
 _FOOTER_ON_SCRIM_B = (136, 130, 122)
 
@@ -313,8 +313,8 @@ def layout_motto_on_scrim_body(
 ) -> dict:
     """Compute 每日寄语配图分支同款竖排与描边参数；``lines`` 为已定宽的物理行。"""
     scale = min(canvas_w, canvas_h) / 600
-    # 与 compose_motto 配图分支一致：靠下，落在 scrim 压暗更实的一段。
-    text_zone_center = int(canvas_h * 0.78)
+    # 与 compose_motto 配图分支一致：靠下，落在条内更实的一段。
+    text_zone_center = int(canvas_h * 0.795)
     footer_pad = max(20, int(26 * scale))
     footer_reserve = canvas_h - footer_pad - int(18 * scale)
 
@@ -373,7 +373,7 @@ def layout_motto_on_scrim_body(
         stroke_w = max(1, int(1.55 * scale))
     else:
         q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
-        stroke_w = max(1, min(3, int(0.42 * scale + 0.78)))
+        stroke_w = max(1, min(4, int(0.48 * scale + 0.88)))
 
     return {
         "y0": y0,
@@ -505,16 +505,15 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        # 渐变从画面中下开始，底部高峰值压暗；正文靠下落在实带内。
-        scrim_start = int(canvas_h * 0.60)
+        # 渐变略早于 0.6 起；curve_exp<1 抬高条内中段 alpha，避免正文落在 t≈0.4～0.5 仍偏透。
+        scrim_start = int(canvas_h * 0.55)
         overlay_bottom_scrim(
             img,
             scrim_start,
             canvas_h - scrim_start,
-            scrim_rgb=(16, 18, 24),
-            default_max_opacity=0.95,
-            # 1.05 ≈ photo_scrim 允许下限：条内 alpha 随高度接近线性，压暗尽早铺开。
-            curve_exp=1.05,
+            scrim_rgb=(12, 14, 20),
+            default_max_opacity=0.98,
+            curve_exp=0.92,
         )
         draw = ImageDraw.Draw(img)
 

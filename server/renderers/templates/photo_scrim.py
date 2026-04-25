@@ -84,15 +84,19 @@ def overlay_bottom_scrim(
     default_max_opacity: float = 0.76,
     curve_exp: float = 1.38,
 ) -> None:
-    """Vertical gradient from transparent at top of strip to dark at bottom."""
+    """Vertical gradient from transparent at top of strip to dark at bottom.
+
+    ``curve_exp`` shapes ``t**curve_exp`` for ``t`` in [0,1]. Values **below 1**
+    lift opacity in the **mid** strip (text often sits here); above 1 keeps the
+    top more transparent. Clamped to [0.88, 2.2].
+    """
     raw = os.environ.get(max_opacity_env, str(default_max_opacity)).strip()
     try:
         max_opacity = float(raw)
     except ValueError:
         max_opacity = default_max_opacity
     max_opacity = max(0.38, min(0.98, max_opacity))
-    # <1 时 t**exp 在条上半段更大，压暗更早出现；>1 则更晚。避免 0（t=0 处 0**0 在 Python 为 1）。
-    curve_exp = max(0.35, min(2.2, float(curve_exp)))
+    curve_exp = max(0.88, min(2.2, float(curve_exp)))
     w = canvas.width
     strip = Image.new("RGB", (w, fade_h), scrim_rgb)
     mask = Image.new("L", (w, fade_h))
