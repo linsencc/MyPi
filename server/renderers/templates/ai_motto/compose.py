@@ -80,11 +80,11 @@ _ACCENT_COLOR = (85, 80, 72)
 # Strong contrast (used when MYPI_MOTTO_QUOTE_BOLD=1 or synthetic bold).
 _QUOTE_ON_SCRIM_FILL = (244, 240, 228)
 _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
-# Plain / 朴素：略亮字色 + 偏暖灰细描边，比深灰边更柔和、少「描边感」。
-_QUOTE_ON_SCRIM_FILL_PLAIN = (253, 251, 247)
-_QUOTE_ON_SCRIM_STROKE_PLAIN = (118, 112, 104)
-_FOOTER_ON_SCRIM_A = (176, 170, 162)
-_FOOTER_ON_SCRIM_B = (128, 122, 116)
+# Plain / 朴素：略偏乳白（略压最亮点）+ 较深暖灰描边，兼顾亮云底上的分离度。
+_QUOTE_ON_SCRIM_FILL_PLAIN = (250, 248, 242)
+_QUOTE_ON_SCRIM_STROKE_PLAIN = (56, 52, 48)
+_FOOTER_ON_SCRIM_A = (188, 182, 174)
+_FOOTER_ON_SCRIM_B = (136, 130, 122)
 
 # Between closing 「」 and ASCII ` -- ` (display): one ideographic space reads wider than a single ASCII space.
 _MOTTO_QUOTE_TO_DASH_GAP = "\u3000"
@@ -290,19 +290,20 @@ def compose_motto(
         fitted = beautify_landscape_art(fitted)
         img.paste(fitted, (0, 0))
 
-        scrim_start = int(canvas_h * 0.38)
+        # 渐变起点略高 + 较高峰值透明度，让文字带所在高度有足够压暗，避免白字融进白云。
+        scrim_start = int(canvas_h * 0.30)
         overlay_bottom_scrim(
             img,
             scrim_start,
             canvas_h - scrim_start,
-            scrim_rgb=(30, 31, 36),
-            default_max_opacity=0.66,
-            curve_exp=1.52,
+            scrim_rgb=(26, 28, 34),
+            default_max_opacity=0.80,
+            curve_exp=1.36,
         )
         draw = ImageDraw.Draw(img)
 
-        # 略上移，减轻「出处与页脚之间一大块空 scrim」的松散感。
-        text_zone_center = int(canvas_h * 0.678)
+        # 略靠下，落在 scrim 更实的一段，亮底上可读性更好。
+        text_zone_center = int(canvas_h * 0.692)
         size_px = max(21, int(30 * scale))
         font, quote_bold = load_motto_quote_font(size_px)
         size_attrib = max(14, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO))
@@ -340,8 +341,8 @@ def compose_motto(
             stroke_w = max(1, int(1.55 * scale))
         else:
             q_fill, q_stroke = _QUOTE_ON_SCRIM_FILL_PLAIN, _QUOTE_ON_SCRIM_STROKE_PLAIN
-            # 更细的暖灰描边：朴素、少海报感；e-ink 仍靠略抬的 scrim 对比兜底。
-            stroke_w = max(1, int(0.32 * scale))
+            # 至少约 2px 等效描边 + 随 scale 略增，高亮背景上仍保持「纸感」不糊成一片。
+            stroke_w = max(2, min(5, int(0.55 * scale + 1.15)))
         for k, ln in enumerate(lines):
             fk = _quote_font_for_line(ln, font, font_attrib)
             bbox = draw.textbbox((0, 0), ln, font=fk)
