@@ -1,48 +1,18 @@
-"""AI-generated daily message template with a Pinterest-sourced illustration.
+"""每日寄语 wall template: LLM → remote art (Pinterest / pinscrape) → compose_motto.
 
-Implementation is split across ``prompts``, ``net``, ``llm``, ``images``, and ``compose`` in this package.
-
-Targets **full-color RGB** for color e-ink. Downloaded photos are rejected if they look **black &
-white**; if no color image is found after retries, the layout falls back to **text only** (no art).
-
-Each render:
-  1. Calls LLM to generate a Chinese motto + English image prompt (landscape / scenery, any style)
-  2. Fetches a full-color landscape image from **Pinterest only** by default (optional stock fallbacks; see ``images``)
-  3. Composes a full-bleed image with text overlay (portrait-friendly, image is cropped to the frame)
-
-Environment variables:
-  MYPI_LLM_API_KEY             – OpenAI-compatible API key (e.g. OpenRouter)
-  MYPI_LLM_BASE_URL            – API base URL (default: https://openrouter.ai/api/v1)
-  MYPI_LLM_MODEL               – Model id (default: deepseek/deepseek-chat on OpenRouter)
-  MYPI_LLM_TIMEOUT             – LLM timeout seconds (default: 20)
-  MYPI_LLM_PROXY               – HTTP(S) proxy for LLM calls
-  MYPI_PINTEREST_ACCESS_TOKEN  – Pinterest API OAuth access token (or PINTEREST_ACCESS_TOKEN)
-  MYPI_PINTEREST_COUNTRY       – ISO 3166-1 alpha-2 for partner search (default: US)
-  MYPI_PINTEREST_BOARD_ID      – Optional numeric board id (same Pinterest account as token)
-  MYPI_MOTTO_FETCH_MAX_SIDE    – Max long edge when downloading (see photo_scrim.infer_fetch_size)
-  MYPI_MOTTO_COLOR_BOOST       – PIL color boost after download (see photo_scrim.to_full_color_rgb)
-  MYPI_MOTTO_BEAUTIFY          – if 0: skip mild contrast/sat on downloaded art (default: 1 / on)
-  MYPI_MOTTO_SCRIM_MAX         – bottom dark scrim max opacity (see photo_scrim.overlay_bottom_scrim)
-  MYPI_MOTTO_FONT              – Optional path to .ttf/.otf/.ttc for the quote
-  MYPI_MOTTO_FONT_BOLD         – Optional path to a bolder face for the quote
-  MYPI_MOTTO_IMAGE_NO_PROXY      – if 1/true: Pinterest/image HTTP without proxy (LLM may still use proxy)
-  MYPI_MOTTO_STOCK_FALLBACK      – if 1/true: when Pinterest fails, try LoremFlickr/Picsum (default: off = Pinterest-only)
-  MYPI_MOTTO_OFFLINE_IMAGE       – Optional path to a JPEG/PNG when remote image fetch fails
+Env vars: see module docstrings in ``llm.py`` (LLM), ``images.py`` (Pinterest / pinscrape / fallbacks),
+``net.py`` (proxy), ``compose.py`` (fonts / scrim).
 """
 from __future__ import annotations
 
 import logging
 
-from PIL import Image
-
 from renderers.template_base import RenderContext, WallTemplate
-from .compose import compose_motto
-from .images import (
-    fetch_web_motto_image,
-    offline_motto_art,
-)
-from .llm import call_llm_for_motto
 from renderers.templates.photo_scrim import infer_fetch_size
+
+from .compose import compose_motto
+from .images import fetch_web_motto_image, offline_motto_art
+from .llm import call_llm_for_motto
 
 log = logging.getLogger(__name__)
 

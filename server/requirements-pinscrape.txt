@@ -1,0 +1,8 @@
+# Optional dependency for MYPI_MOTTO_PINSCRAPE=1 (see server/renderers/templates/ai_motto/images.py).
+#
+# On Raspberry Pi (headless, no libGL), after install run:
+#   pip uninstall -y opencv-python
+#   pip install 'opencv-python-headless~=4.11.0'
+#
+# pinscrape declares opencv-python; headless replaces it for import cv2.
+pinscrape==5.1.0

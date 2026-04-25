@@ -6,14 +6,18 @@ import os
 import urllib.request
 
 
-def build_llm_proxy_opener(need_proxy: bool = True) -> urllib.request.OpenerDirector:
-    if not need_proxy:
-        return urllib.request.build_opener()
-    proxy = (
+def http_proxy_url() -> str | None:
+    """First non-empty MYPI_LLM_PROXY / HTTPS_PROXY / https_proxy (strip)."""
+    p = (
         os.environ.get("MYPI_LLM_PROXY", "").strip()
         or os.environ.get("HTTPS_PROXY", "").strip()
         or os.environ.get("https_proxy", "").strip()
     )
+    return p or None
+
+
+def build_llm_proxy_opener() -> urllib.request.OpenerDirector:
+    proxy = http_proxy_url()
     if proxy:
         return urllib.request.build_opener(
             urllib.request.ProxyHandler({"https": proxy, "http": proxy})

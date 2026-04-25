@@ -60,6 +60,32 @@ _QUOTE_ON_SCRIM_STROKE = (10, 12, 18)
 _FOOTER_ON_SCRIM_A = (188, 182, 170)
 _FOOTER_ON_SCRIM_B = (138, 132, 122)
 
+
+def _draw_motto_footer(
+    draw: ImageDraw.ImageDraw,
+    canvas_w: int,
+    footer_y: int,
+    scale: float,
+    *,
+    on_scrim: bool,
+) -> None:
+    small = _load_cjk_font(max(10, int(12 * scale)))
+    date_str = cn_date_str()
+    attr_str = "— 每日寄语"
+    spacer = int(20 * scale)
+    db = draw.textbbox((0, 0), date_str, font=small)
+    ab = draw.textbbox((0, 0), attr_str, font=small)
+    dw, aw = db[2] - db[0], ab[2] - ab[0]
+    total = dw + spacer + aw
+    x0 = (canvas_w - total) // 2
+    if on_scrim:
+        draw.text((x0, footer_y), date_str, fill=_FOOTER_ON_SCRIM_A, font=small)
+        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_FOOTER_ON_SCRIM_B, font=small)
+    else:
+        draw.text((x0, footer_y), date_str, fill=_SECONDARY_COLOR, font=small)
+        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_SUBTLE_COLOR, font=small)
+
+
 # Prefer breaking after these (CJK / ASCII punctuation); avoid ugly mid-word cuts where possible.
 # 不含 ASCII '-'，避免把 motto 里的「 -- 」拆断到两行。
 _MOTTO_BREAK_AFTER = frozenset("，、；。：！？．!?,)）】」』〉》…—　 \t")
@@ -208,17 +234,7 @@ def compose_motto(
             )
 
         footer_y = canvas_h - max(18, int(24 * scale))
-        small = _load_cjk_font(max(10, int(12 * scale)))
-        date_str = cn_date_str()
-        attr_str = "— 每日寄语"
-        spacer = int(20 * scale)
-        db = draw.textbbox((0, 0), date_str, font=small)
-        ab = draw.textbbox((0, 0), attr_str, font=small)
-        dw, aw = db[2] - db[0], ab[2] - ab[0]
-        total = dw + spacer + aw
-        x0 = (canvas_w - total) // 2
-        draw.text((x0, footer_y), date_str, fill=_FOOTER_ON_SCRIM_A, font=small)
-        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_FOOTER_ON_SCRIM_B, font=small)
+        _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=True)
 
     else:
         bar_w = int(32 * scale)
@@ -256,16 +272,6 @@ def compose_motto(
                 draw.text((tx, ty), ln, fill=_TEXT_COLOR, font=font)
 
         footer_y = y0 + len(lines) * line_step + max(10, int(16 * scale))
-        small = _load_cjk_font(max(10, int(12 * scale)))
-        date_str = cn_date_str()
-        attr_str = "— 每日寄语"
-        spacer = int(20 * scale)
-        db = draw.textbbox((0, 0), date_str, font=small)
-        ab = draw.textbbox((0, 0), attr_str, font=small)
-        dw, aw = db[2] - db[0], ab[2] - ab[0]
-        total = dw + spacer + aw
-        x0 = (canvas_w - total) // 2
-        draw.text((x0, footer_y), date_str, fill=_SECONDARY_COLOR, font=small)
-        draw.text((x0 + dw + spacer, footer_y), attr_str, fill=_SUBTLE_COLOR, font=small)
+        _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=False)
 
     return img

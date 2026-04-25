@@ -218,5 +218,3 @@ def call_llm_for_motto() -> tuple[str, str | None]:
                 time.sleep(0.5 * (attempt + 1))
                 continue
             return fallback_motto_for_day(), None
-
-    return motto or fallback_motto_for_day(), image_prompt

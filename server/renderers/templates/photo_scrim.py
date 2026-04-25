@@ -134,13 +134,17 @@ def download_image_url(
     *,
     log_prefix: str = "photo_scrim",
     user_agent: str | None = None,
+    request_headers: dict[str, str] | None = None,
     retries: int = 3,
     retry_delay_s: float = 2.0,
 ) -> Image.Image | None:
     sock_to = _socket_timeout(timeout, 60)
     retries = max(1, retries)
     ua = (user_agent or "").strip() or DEFAULT_IMAGE_UA
-    req = urllib.request.Request(url, headers={"User-Agent": ua}, method="GET")
+    hdrs: dict[str, str] = {"User-Agent": ua}
+    if request_headers:
+        hdrs.update(request_headers)
+    req = urllib.request.Request(url, headers=hdrs, method="GET")
     for attempt in range(retries):
         try:
             with opener.open(req, timeout=_urllib_open_timeout(sock_to)) as resp:
