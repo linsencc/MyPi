@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { Settings2, Terminal } from "lucide-react"
 
 import { AppProviders } from "@/app/providers"
 import { AppToast } from "@/components/AppToast"
 import { SystemLogsDialog } from "@/components/dialogs/SystemLogsDialog"
 import { EditSceneDialog } from "@/components/dialogs/EditSceneDialog"
+import { ShowTemplateNowDialog } from "@/components/dialogs/ShowTemplateNowDialog"
 import { FrameSettingsDialog } from "@/components/dialogs/FrameSettingsDialog"
 import { WallRunsTimeline } from "@/components/WallRunsTimeline"
 import { TemplateCard } from "@/components/templates/TemplateCard"
@@ -17,9 +18,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useWallSession } from "@/hooks/useWallSession"
+import type { TemplateMeta } from "@/types/api"
 
 export default function App() {
   const [logsDialogOpen, setLogsDialogOpen] = useState(false)
+  const [showNowTarget, setShowNowTarget] = useState<TemplateMeta | null>(null)
 
   const {
     loading,
@@ -54,6 +57,18 @@ export default function App() {
     handleSceneCreate,
     handleSceneToggle,
   } = useWallSession()
+
+  const handlePlayTemplate = useCallback(
+    (t: TemplateMeta) => {
+      const meta = templates.find((x) => x.templateId === t.templateId) ?? t
+      if (meta.paramSchema && meta.paramSchema.length > 0) {
+        setShowNowTarget(meta)
+      } else {
+        void runShowNowTemplate(t.templateId)
+      }
+    },
+    [templates, runShowNowTemplate]
+  )
 
   if (loading && !config) {
     return (
@@ -185,7 +200,7 @@ export default function App() {
                     template={t}
                     previewUrl={templatePreviewSrc(t.templateId, t.displayName || t.templateId)}
                     renderBusy={isBusy}
-                    onRenderNow={runShowNowTemplate}
+                    onPlayTemplate={handlePlayTemplate}
                     onCreateScene={handleSceneCreate}
                   />
                 )
@@ -211,6 +226,19 @@ export default function App() {
           onSave={(next) => void handleSceneSave(next)}
           onDelete={(id) => void handleSceneDelete(id)}
           onError={showToast}
+        />
+
+        <ShowTemplateNowDialog
+          open={showNowTarget != null}
+          template={showNowTarget}
+          busy={showNowTarget != null && rowBusyId === showNowTarget.templateId}
+          onOpenChange={(o) => {
+            if (!o) setShowNowTarget(null)
+          }}
+          onNotify={showToast}
+          onSubmit={async (id, params) => {
+            await runShowNowTemplate(id, params)
+          }}
         />
 
         <AppToast message={toast} />

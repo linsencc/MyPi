@@ -57,12 +57,19 @@ npm run dev
 
 ## 🎨 如何开发新增模板
 
-系统基于动态发现机制，无需繁琐的注册表配置，只需两步即可完成一个新模板的接入，并在 Web 端立刻生效可用。
+系统基于动态发现机制，无需繁琐的注册表配置，**通常两步**即可完成一个新模板的接入，并在 Web 端立刻生效可用。若需要用户在 Web 上填写「模板入参」，再完成第 3 步。
 
 1. **新建模板文件**
   在 `server/renderers/templates/` 目录下创建一个 Python 文件（如 `my_template.py`）。
 2. **继承并实现接口**
   引入 `WallTemplate` 基类并实现 `render` 方法，直接返回 `PIL.Image.Image` 对象即可。
+3. **（可选）声明 Web 入参表单**  
+   不要在 `template_base.py` 里写具体模板字段。任选其一：
+   - **声明式**：与 `template.py` 同目录放置 `param_schema.json`（根为字段数组，或 `{"fields": [...]}`）。每项至少含 `key`、`type`（`string` 或 `boolean`）；可选 `required`、`default`、`description`（Web 仅在鼠标悬浮 `key` 时用 Tooltip 展示说明，无 `label` / `maxLength`）。类体中一行：  
+     `param_schema = load_param_schema_json(Path(__file__).resolve().parent / "param_schema.json")`  
+     （`load_param_schema_json` 见 `renderers.templates.ui_params`，可参考 `ai_motto/param_schema.json`。）
+   - **程序化**：用 `renderers.templates.ui_params` 中的 `field_string` / `field_boolean` 组装列表赋给 `param_schema`。
+   - **落库与 API**：`POST/PUT /api/v1/scenes` 写入前会经 `ui_params.normalize_scene_template_params` 与 `validate_scene_template_params_required` 处理：仅保留当前模板 schema 中的键、做类型与长度规范化；必填字符串在后端同样校验。业务模板无需在路由里手写上述逻辑。
 
 ```python
 from PIL import Image, ImageDraw

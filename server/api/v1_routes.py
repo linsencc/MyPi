@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 from pydantic import ValidationError
 
 from api.validation_errors import scene_validation_error_response
 from domain.models import AppConfig, Scene
+from renderers.templates.ui_params import (
+    merge_incoming_template_params,
+    scene_template_params_after_model,
+)
 from storage.stores import load_config, save_config
 
 log = logging.getLogger(__name__)
@@ -23,6 +28,14 @@ _OUTPUT_NAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 def _orch():
     return current_app.extensions["orchestrator"]
+
+
+def _param_schema_for_template(template_id: str) -> list[dict[str, Any]]:
+    reg = current_app.extensions["registry"]
+    plug = reg.get(template_id)
+    if not plug:
+        return []
+    return list(getattr(type(plug), "param_schema", []) or [])
 
 
 @bp.get("/config")
@@ -77,7 +90,13 @@ def create_scene():
     reg = current_app.extensions["registry"]
     if not reg.get(new_scene.template_id):
         return jsonify({"error": "unknown templateId"}), 400
-        
+
+    schema = _param_schema_for_template(new_scene.template_id)
+    norm, terr = scene_template_params_after_model(schema, new_scene.template_params)
+    if terr:
+        return jsonify({"error": f"Invalid templateParams: {terr}"}), 400
+    new_scene = new_scene.model_copy(update={"template_params": norm})
+
     cfg.scenes.append(new_scene)
     save_config(cfg)
     log.info(f"API: Created scene {new_scene.id}")
@@ -109,6 +128,14 @@ def put_scene(scene_id: str):
         return jsonify({"error": "not found"}), 404
     if new.template_id != cfg.scenes[idx].template_id:
         return jsonify({"error": "templateId is fixed for this card"}), 400
+
+    reg = current_app.extensions["registry"]
+    schema = _param_schema_for_template(new.template_id)
+    norm, terr = scene_template_params_after_model(schema, new.template_params)
+    if terr:
+        return jsonify({"error": f"Invalid templateParams: {terr}"}), 400
+    new = new.model_copy(update={"template_params": norm})
+
     cfg.scenes[idx] = new
     save_config(cfg)
     log.info(f"API: Updated scene {new.id}")
@@ -132,32 +159,68 @@ def delete_scene(scene_id: str):
 
 @bp.post("/templates/<template_id>/show-now")
 def show_now_template(template_id: str):
+    from domain.scene_reconcile import allocate_scene_id, default_scene_for_template
+
     cfg = load_config()
     reg = current_app.extensions["registry"]
-    if not reg.get(template_id):
+    plug = reg.get(template_id)
+    if not plug:
         return jsonify({"error": "unknown templateId"}), 404
 
-    # Find an enabled scene for this template
-    scene = next((s for s in cfg.scenes if s.template_id == template_id and s.enabled), None)
-    
-    # If no enabled scene, find a disabled one
-    if scene is None:
-        scene = next((s for s in cfg.scenes if s.template_id == template_id), None)
-        
-    # If no scene exists at all, create a temporary one just for showing now
-    if scene is None:
-        from domain.scene_reconcile import default_scene_for_template
-        plug = reg.get(template_id)
-        dn = (plug.display_name if plug else None) or template_id
+    body = request.get_json(silent=True)
+    params_override: dict[str, Any] | None = None
+    if isinstance(body, dict) and "templateParams" in body:
+        raw_tp = body.get("templateParams")
+        if raw_tp is None:
+            params_override = None
+        elif not isinstance(raw_tp, dict):
+            return jsonify({"error": "templateParams must be an object"}), 400
+        else:
+            params_override = raw_tp
+
+    base = next((s for s in cfg.scenes if s.template_id == template_id and s.enabled), None)
+    if base is None:
+        base = next((s for s in cfg.scenes if s.template_id == template_id), None)
+
+    orch = _orch()
+
+    if params_override is not None:
+        if base is None:
+            dn = plug.display_name or template_id
+            base = default_scene_for_template(template_id, display_name=dn)
+        schema_fields = _param_schema_for_template(template_id)
+        merged = merge_incoming_template_params(
+            schema_fields, base.template_params or {}, params_override
+        )
+        ephemeral = base.model_copy(
+            update={
+                "id": allocate_scene_id(template_id),
+                "template_params": merged,
+                "enabled": True,
+            }
+        )
+        log.info(
+            "API: Show-now with templateParams template_id=%s ephemeral_id=%s",
+            template_id,
+            ephemeral.id,
+        )
+        orch.enqueue_ephemeral_scene(ephemeral)
+    elif base is None:
+        dn = plug.display_name or template_id
         scene = default_scene_for_template(template_id, display_name=dn)
-        
-        orch = _orch()
-        log.info(f"API: Show-now requested for template_id={template_id}, enqueued ephemeral scene_id={scene.id}")
+        log.info(
+            "API: Show-now requested for template_id=%s, enqueued ephemeral scene_id=%s",
+            template_id,
+            scene.id,
+        )
         orch.enqueue_ephemeral_scene(scene)
     else:
-        orch = _orch()
-        log.info(f"API: Show-now requested for template_id={template_id}, enqueued existing scene_id={scene.id}")
-        orch.enqueue_show_now(scene.id)
+        log.info(
+            "API: Show-now requested for template_id=%s, enqueued existing scene_id=%s",
+            template_id,
+            base.id,
+        )
+        orch.enqueue_show_now(base.id)
 
     return jsonify(
         {

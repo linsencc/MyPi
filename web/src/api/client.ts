@@ -95,11 +95,20 @@ export function showNow(sceneId: string) {
   )
 }
 
-export function showNowTemplate(templateId: string) {
+export function showNowTemplate(
+  templateId: string,
+  body?: { templateParams: Record<string, unknown> }
+) {
   return fetchJson<{ ok: boolean; wallState?: WallState }>(
     `/templates/${encodeURIComponent(templateId)}/show-now`,
     {
       method: "POST",
+      ...(body
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        : {}),
     }
   )
 }

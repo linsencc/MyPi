@@ -1,0 +1,10 @@
+[
+  {
+    "key": "text",
+    "name": "固定展示文字",
+    "type": "string",
+    "required": false,
+    "default": "",
+    "description": "填写后仅展示该条文案与无图卡片样式；留空则从本地语料随机摘句，并按环境配置尝试配图。"
+  }
+]

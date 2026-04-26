@@ -4,6 +4,7 @@ import importlib
 import inspect
 import pkgutil
 import re
+from typing import Any
 
 from renderers import templates as templates_pkg
 from renderers.template_base import WallTemplate
@@ -25,11 +26,19 @@ class TemplateRegistry:
     def template_ids_ordered(self) -> list[str]:
         return sorted(self._by_id.keys())
 
-    def all_metadata(self) -> list[dict[str, str]]:
-        return [
-            {"templateId": tid, "displayName": inst.display_name}
-            for tid, inst in sorted(self._by_id.items(), key=lambda x: x[0])
-        ]
+    def all_metadata(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for tid, inst in sorted(self._by_id.items(), key=lambda x: x[0]):
+            cls = type(inst)
+            schema = list(getattr(cls, "param_schema", []) or [])
+            out.append(
+                {
+                    "templateId": tid,
+                    "displayName": inst.display_name,
+                    "paramSchema": schema,
+                }
+            )
+        return out
 
 
 def _register_wall_templates_from_module(mod, found: dict[str, WallTemplate]) -> None:

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 const TemplateCardThumbnail = memo(function TemplateCardThumbnail({ src, alt }: { src: string; alt: string }) {
   return (
-    <div className="relative w-full shrink-0 basis-[42%] overflow-hidden bg-slate-100">
+    <div className="relative h-full min-h-0 w-full overflow-hidden border-b border-slate-900/[0.06] bg-slate-100">
       <PreviewFrame src={src} alt={alt} imageFilter="" lightweight />
     </div>
   )
@@ -23,33 +23,33 @@ export const TemplateCard = memo(function TemplateCard({
   template,
   previewUrl,
   renderBusy,
-  onRenderNow,
+  onPlayTemplate,
   onCreateScene,
 }: {
   template: TemplateMeta
   previewUrl: string
   renderBusy: boolean
-  onRenderNow: (templateId: string) => void
+  onPlayTemplate: (template: TemplateMeta) => void
   onCreateScene: (templateId: string) => void
 }) {
   const title = template.displayName || template.templateId
 
-  const handleRenderNow = () => {
-    onRenderNow(template.templateId)
+  const handlePlay = () => {
+    onPlayTemplate(template)
   }
 
   return (
     <li
       className={cn(
-        "group flex aspect-square min-h-0 min-w-0 select-none flex-col overflow-hidden rounded-[length:var(--radius-surface)] border border-slate-900/[0.055] bg-white shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_14px_36px_-22px_rgb(15_23_42/0.12),0_6px_14px_-10px_rgb(15_23_42/0.05)]"
+        "group grid aspect-square min-h-0 min-w-0 grid-rows-2 select-none overflow-hidden rounded-[length:var(--radius-surface)] border border-slate-900/[0.055] bg-white shadow-[0_0_0_1px_rgb(15_23_42/0.04),0_14px_36px_-22px_rgb(15_23_42/0.12),0_6px_14px_-10px_rgb(15_23_42/0.05)]"
       )}
     >
       <TemplateCardThumbnail src={previewUrl} alt={`${title} 缩略预览`} />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-end gap-1.5 px-2.5 pb-2 pt-1 sm:gap-2 sm:px-3 sm:pb-2.5 sm:pt-1.5">
+      <div className="flex h-full min-h-0 min-w-0 flex-col justify-between gap-1.5 px-2.5 pb-2 pt-2 sm:gap-2 sm:px-3 sm:pb-2.5 sm:pt-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="min-w-0 cursor-default">
+            <div className="min-h-0 min-w-0 cursor-default">
               <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[13px]">
                 {title}
               </h3>
@@ -60,8 +60,8 @@ export const TemplateCard = memo(function TemplateCard({
           </TooltipContent>
         </Tooltip>
 
-        <div className="flex shrink-0 touch-manipulation items-center justify-end gap-1.5 pt-0.5 sm:gap-2">
-              <Tooltip>
+        <div className="flex shrink-0 touch-manipulation items-center justify-end gap-1.5 sm:gap-2">
+          <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
@@ -74,7 +74,7 @@ export const TemplateCard = memo(function TemplateCard({
                 onMouseDown={(e) => {
                   if (e.button === 0 && e.detail > 1) e.preventDefault()
                 }}
-                onClick={handleRenderNow}
+                onClick={handlePlay}
               >
                 <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
               </Button>

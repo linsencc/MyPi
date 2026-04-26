@@ -48,6 +48,30 @@ def main() -> int:
         fails += 1
     else:
         print("OK templates", len(t), "items")
+        schema_ok = True
+        for item in t:
+            tid = item.get("templateId")
+            ps = item.get("paramSchema")
+            if tid in ("ai_motto", "misc_gallery"):
+                if not isinstance(ps, list) or not ps:
+                    print("FAIL templates paramSchema", tid, ps)
+                    schema_ok = False
+                elif tid == "misc_gallery":
+                    if ps[0].get("key") != "text" or ps[0].get("type") != "string":
+                        print("FAIL templates paramSchema", tid, ps)
+                        schema_ok = False
+                else:
+                    keys_types = {x.get("key"): x.get("type") for x in ps if isinstance(x, dict)}
+                    if (
+                        keys_types.get("text") != "string"
+                        or keys_types.get("with_image") != "boolean"
+                    ):
+                        print("FAIL templates paramSchema", tid, ps)
+                        schema_ok = False
+        if schema_ok:
+            print("OK templates paramSchema")
+        else:
+            fails += 1
 
     r = c.get("/api/v1/config")
     cfg = j(r)
@@ -92,6 +116,29 @@ def main() -> int:
         else:
             print("OK get scene", sid)
 
+            # Unknown templateParams keys must be stripped on PUT (framework sanitize).
+            one_put = dict(one)
+            one_put["templateParams"] = {"text": "", "garbageKey": 1}
+            r = c.put(
+                f"/api/v1/scenes/{sid}",
+                data=json.dumps(one_put),
+                content_type="application/json",
+            )
+            put_body = j(r)
+            if r.status_code != 200 or not put_body:
+                print("FAIL scene put sanitize", r.status_code, getattr(r, "data", b"")[:300])
+                fails += 1
+            else:
+                tps = put_body.get("templateParams") or {}
+                if "garbageKey" in tps:
+                    print("FAIL scene put should strip unknown keys", tps)
+                    fails += 1
+                elif "text" in tps:
+                    print("FAIL scene put optional empty text should be omitted", tps)
+                    fails += 1
+                else:
+                    print("OK scene put templateParams sanitized")
+
         r = c.post(f"/api/v1/scenes/{sid}/show-now")
         sn = j(r)
         if not sn or not sn.get("ok"):
@@ -106,6 +153,19 @@ def main() -> int:
                 fails += 1
             else:
                 print("OK show-now embeds preview URL")
+
+            r = c.post(
+                "/api/v1/templates/misc_gallery/show-now",
+                data=json.dumps({"templateParams": {"text": "verify_demo_param_override"}}),
+                content_type="application/json",
+            )
+            tp_sn = j(r)
+            if not tp_sn or not tp_sn.get("ok"):
+                print("FAIL template show-now with templateParams", r.status_code, r.data[:200])
+                fails += 1
+            else:
+                print("OK template show-now templateParams")
+                _wait_wall_preview(c, j, timeout_s=45.0)
 
         r = c.get("/api/v1/wall/state")
         ws = j(r)

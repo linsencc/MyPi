@@ -13,12 +13,15 @@ from __future__ import annotations
 import logging
 import os
 import random
+from pathlib import Path
+from typing import Any, ClassVar
 
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.ai_motto.compose import compose_motto
 from renderers.templates.ai_motto.images import fetch_web_motto_image, offline_motto_art
 from renderers.templates.ai_motto.llm import call_llm_for_wallpaper_image_prompt
 from renderers.templates.photo_scrim import infer_fetch_size
+from renderers.templates.ui_params import load_param_schema_json
 
 log = logging.getLogger(__name__)
 
@@ -199,6 +202,9 @@ class MiscGalleryTemplate(WallTemplate):
     """随机一条 ``_MISC_QUOTES``（或 ``templateParams.text``）；画面与「每日寄语」共用 ``compose_motto``。"""
 
     display_name = "杂锦摘句"
+    param_schema: ClassVar[list[dict[str, Any]]] = load_param_schema_json(
+        Path(__file__).resolve().parent / "param_schema.json"
+    )
 
     def render(self, ctx: RenderContext) -> Image.Image:
         params = ctx.scene.template_params or {}

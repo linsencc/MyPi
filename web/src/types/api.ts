@@ -28,9 +28,25 @@ export interface AppConfig {
   quietHours: QuietHours
 }
 
+/** Declarative field from ``GET /templates`` → ``paramSchema`` (snake_case keys in JSON). */
+export interface TemplateParamField {
+  key: string
+  /** Web UI 标题；未设置时用 ``key``。 */
+  name?: string
+  type: "string" | "boolean"
+  /** Default ``false`` when omitted. */
+  required?: boolean
+  /** ``string`` default or ``boolean`` default; omitted uses "" / false. */
+  default?: string | boolean
+  /** Shown in Web UI on hover (tooltip). */
+  description?: string
+}
+
 export interface TemplateMeta {
   templateId: string
   displayName: string
+  /** Empty when the template has no user-facing parameters. */
+  paramSchema?: TemplateParamField[]
 }
 
 export interface WallRun {

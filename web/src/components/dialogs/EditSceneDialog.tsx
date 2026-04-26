@@ -27,13 +27,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { Scene, TemplateMeta } from "@/types/api"
+import { TemplateParamsFields } from "@/components/templates/TemplateParamsFields"
+import type { Scene, TemplateMeta, TemplateParamField } from "@/types/api"
 import {
   applyScheduleFormToScene,
   scheduleToFormState,
   validateScheduleForm,
   type SceneScheduleFormState,
 } from "@/lib/apply-scene-schedule"
+import {
+  initialTemplateParamForm,
+  sceneTemplateParamsFromForm,
+  validateTemplateParamForm,
+} from "@/lib/template-params-form"
 import { dialogShell } from "@/lib/dialog-shell"
 import {
   describeRefreshPreview,
@@ -76,7 +82,14 @@ export function EditSceneDialog({
   const [formScheduledClock, setFormScheduledClock] = useState("09:00:00")
   const [formWeekdays, setFormWeekdays] = useState<number[]>(() => [...WEEKDAY_PRESETS.daily])
 
-  const lastSyncedId = useRef<string | null>(null)
+  const [templateParamForm, setTemplateParamForm] = useState<Record<string, unknown>>({})
+
+  const lastSyncKey = useRef<string | null>(null)
+
+  const paramSchema = useMemo((): TemplateParamField[] => {
+    if (!scene) return []
+    return templates.find((t) => t.templateId === scene.templateId)?.paramSchema ?? []
+  }, [scene, templates])
 
   useEffect(() => {
     if (!open) setDeleteDialogOpen(false)
@@ -84,11 +97,17 @@ export function EditSceneDialog({
 
   useEffect(() => {
     if (!open || !scene) {
-      lastSyncedId.current = null
+      lastSyncKey.current = null
       return
     }
-    if (lastSyncedId.current === scene.id) return
-    lastSyncedId.current = scene.id
+    const key = [
+      scene.id,
+      scene.templateId,
+      JSON.stringify(scene.templateParams ?? {}),
+      JSON.stringify(scene.schedule),
+    ].join("|")
+    if (lastSyncKey.current === key) return
+    lastSyncKey.current = key
 
     const plugLabel =
       templates.find((t) => t.templateId === scene.templateId)?.displayName ?? scene.templateId
@@ -99,6 +118,8 @@ export function EditSceneDialog({
     setFormIntervalUnit(sch.intervalUnit)
     setFormScheduledClock(sch.scheduledClock)
     setFormWeekdays(sch.weekdays)
+    const schema = templates.find((t) => t.templateId === scene.templateId)?.paramSchema ?? []
+    setTemplateParamForm(initialTemplateParamForm(schema, scene.templateParams))
   }, [open, scene, templates])
 
   const pluginDisplayName = useMemo(() => {
@@ -145,19 +166,39 @@ export function EditSceneDialog({
       onError("请填写场景名称")
       return null
     }
+    const paramErr = validateTemplateParamForm(paramSchema, templateParamForm)
+    if (paramErr) {
+      onError(paramErr)
+      return null
+    }
+    const mergedParams = sceneTemplateParamsFromForm(
+      paramSchema,
+      base.templateParams ?? {},
+      templateParamForm
+    )
     let next: Scene = {
       ...base,
       name: trimmedName,
       description: base.description,
       enabled: base.enabled,
       templateId: base.templateId,
-      templateParams: base.templateParams,
+      templateParams: mergedParams,
       previewImageUrl: base.previewImageUrl,
       tieBreakPriority: base.tieBreakPriority,
     }
     next = applyScheduleFormToScene(next, form)
     return next
-  }, [name, formRefreshMode, formIntervalValue, formIntervalUnit, formScheduledClock, formWeekdays, onError])
+  }, [
+    name,
+    formRefreshMode,
+    formIntervalValue,
+    formIntervalUnit,
+    formScheduledClock,
+    formWeekdays,
+    onError,
+    paramSchema,
+    templateParamForm,
+  ])
 
   const handleSave = useCallback(async () => {
     if (!scene || saving) return
@@ -237,6 +278,15 @@ export function EditSceneDialog({
                 className={cn("h-10 font-medium", editDialogFieldClass)}
               />
             </div>
+
+            {paramSchema.length > 0 ? (
+              <TemplateParamsFields
+                fields={paramSchema}
+                value={templateParamForm}
+                onChange={setTemplateParamForm}
+                idsPrefix="edit-scene"
+              />
+            ) : null}
 
             <div className="border-t border-slate-100 pt-4">
               <span className={editDialogLabelClass}>更新方式</span>

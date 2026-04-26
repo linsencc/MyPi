@@ -14,6 +14,11 @@ def _unique_scene_id(template_id: str) -> str:
     return f"scene-{safe}-{short_uuid}"
 
 
+def allocate_scene_id(template_id: str) -> str:
+    """New scene id (e.g. ephemeral show-now); must not collide with persisted ``cfg.scenes``."""
+    return _unique_scene_id(template_id)
+
+
 def default_scene_for_template(template_id: str, *, display_name: str | None = None) -> Scene:
     label = (display_name or "").strip() or template_id
     return Scene(

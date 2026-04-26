@@ -27,6 +27,7 @@ import {
   pickLatestOutputUrlForScene,
   pickLatestOutputUrlForTemplate,
 } from "@/lib/preview-resolve"
+import { showNowRequestBodyFromForm } from "@/lib/template-params-form"
 import { waitForWallPreview } from "@/lib/wall-render-wait"
 import type { AppConfig, Scene, TemplateMeta, WallRun, WallState } from "@/types/api"
 
@@ -426,28 +427,35 @@ export function useWallSession() {
   )
 
   const runShowNowTemplate = useCallback(
-    (templateId: string) => {
-      void withBusyAsync(templateId, async () => {
+    (templateId: string, formParams?: Record<string, unknown>) => {
+      return withBusyAsync(templateId, async () => {
         showToast("正在上屏…")
         startWallPushBurst()
         try {
-          const sn = await showNowTemplate(templateId)
+          const meta = templates.find((t) => t.templateId === templateId)
+          const body =
+            formParams !== undefined
+              ? showNowRequestBodyFromForm(meta?.paramSchema ?? [], formParams)
+              : undefined
+          const sn = await showNowTemplate(templateId, body)
           if (sn.wallState) setWallState(sn.wallState)
           const ws = await waitForWallPreview(
             { type: "template", templateId },
             { onTick: (w) => setWallState(w) }
           )
           setWallState(ws)
-          showToast(`已上墙：${templateId}`)
+          const label = meta?.displayName ?? templateId
+          showToast(`已上墙：${label}`)
           await refresh()
         } catch (e) {
           const msg =
             e instanceof ApiError ? e.message : e instanceof Error ? e.message : "请求失败"
           showToast(msg)
+          throw e instanceof Error ? e : new Error(msg)
         }
       })
     },
-    [refresh, showToast, startWallPushBurst, withBusyAsync]
+    [refresh, showToast, startWallPushBurst, templates, withBusyAsync]
   )
 
   return {

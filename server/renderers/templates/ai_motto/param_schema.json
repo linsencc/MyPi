@@ -1,0 +1,18 @@
+[
+  {
+    "key": "text",
+    "name": "自定义寄语",
+    "type": "string",
+    "required": false,
+    "default": "",
+    "description": "填写后该条作为寄语正文；不填则由「每日寄语」按完整流程（LLM+配图）生成。开启配底图时，固定文案仍会走与自动流程一致的壁纸拉取与网络/离线兜底。"
+  },
+  {
+    "key": "with_image",
+    "name": "配底图",
+    "type": "boolean",
+    "required": true,
+    "default": true,
+    "description": "开：配合壁纸词拉 Pinterest / pinscrape 或点阵底图。关：仅无图文字卡片、不拉底图。"
+  }
+]
