@@ -493,7 +493,15 @@ def compose_motto(
     art: Image.Image | None,
     canvas_w: int,
     canvas_h: int,
+    *,
+    attr_suffix: str = "— 每日寄语",
+    max_wrap_lines: int = 6,
 ) -> Image.Image:
+    """Lay out ``motto`` on optional full-bleed ``art`` (same path as 每日寄语).
+
+    ``attr_suffix`` / ``max_wrap_lines`` let other templates (e.g. 杂锦) reuse this composer.
+    """
+    ml = max(3, min(24, int(max_wrap_lines)))
     img = Image.new("RGB", (canvas_w, canvas_h), color=_BG_COLOR)
     draw = ImageDraw.Draw(img)
     scale = min(canvas_w, canvas_h) / 600
@@ -526,7 +534,7 @@ def compose_motto(
             max_chars = (n + 1) // 2
         else:
             max_chars = raw_max
-        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
+        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=ml)
         paint_motto_on_scrim_body(
             draw,
             canvas_w,
@@ -534,7 +542,7 @@ def compose_motto(
             lines,
             frozenset(),
             size_px,
-            attr_suffix="— 每日寄语",
+            attr_suffix=attr_suffix,
             draw_footer=True,
         )
 
@@ -552,7 +560,7 @@ def compose_motto(
         size_attrib = max(16, int(size_px * _MOTTO_ATTRIB_SIZE_RATIO))
         font_attrib, _ = load_motto_quote_font(size_attrib)
         max_chars = max(6, int((canvas_w - margin * 2) / (size_px * 1.02)))
-        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=6)
+        lines = _motto_wrap_pipeline(motto, max_chars=max_chars, max_lines=ml)
         ink_heights = _ink_heights_for_motto_lines(lines, font, font_attrib, draw)
         line_gap2 = int(size_px * (0.30 if not quote_bold else 0.22))
         line_step = max(ink_heights) + max(6, line_gap2)
@@ -578,6 +586,8 @@ def compose_motto(
                 draw.text((tx, ty), ln, fill=text_fill, font=fk)
 
         footer_y = y0 + len(lines) * line_step + max(10, int(16 * scale))
-        _draw_motto_footer(draw, canvas_w, footer_y, scale, on_scrim=False)
+        _draw_motto_footer(
+            draw, canvas_w, footer_y, scale, on_scrim=False, attr_suffix=attr_suffix
+        )
 
     return img
