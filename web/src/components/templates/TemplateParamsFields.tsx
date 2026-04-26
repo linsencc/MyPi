@@ -99,7 +99,9 @@ function ParamKeyLabel({
   return (
     <span className="inline-flex min-h-5 min-w-0 max-w-full flex-nowrap items-center gap-x-1.5">
       {keyText}
-      {showRequirementChip ? <RequiredOptionalChip required={requiredChip === true} /> : null}
+      {showRequirementChip ? (
+        <RequiredOptionalChip required={requiredChip === true} />
+      ) : null}
     </span>
   )
 }
@@ -131,7 +133,7 @@ export const TemplateParamsFields = memo(function TemplateParamsFields({
       >
         模板参数
       </p>
-      <div className="space-y-3.5">
+      <div className="space-y-2">
         {fields.map((f) => {
           const id = `${idsPrefix}-${f.key}`
           const strReq = f.type === "string" && f.required === true
@@ -141,7 +143,7 @@ export const TemplateParamsFields = memo(function TemplateParamsFields({
             return (
               <div
                 key={f.key}
-                className="flex min-w-0 items-center justify-between gap-3"
+                className="flex min-h-10 min-w-0 items-center justify-between gap-3"
               >
                 <label
                   htmlFor={id}
@@ -166,11 +168,11 @@ export const TemplateParamsFields = memo(function TemplateParamsFields({
           return (
             <div
               key={f.key}
-              className="flex min-w-0 items-center gap-3"
+              className="flex min-h-10 min-w-0 items-center justify-between gap-3"
             >
               <label
                 htmlFor={id}
-                className="flex h-10 min-w-0 max-w-[38%] shrink-0 items-center sm:max-w-[11rem] md:max-w-[12rem]"
+                className="flex min-w-0 max-w-[38%] shrink-0 items-center sm:max-w-[11rem] md:max-w-[12rem]"
               >
                 <ParamKeyLabel
                   display={fieldLabelText(f)}
@@ -179,7 +181,7 @@ export const TemplateParamsFields = memo(function TemplateParamsFields({
                   requiredChip={strReq}
                 />
               </label>
-              <div className="relative min-w-0 flex-1">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Input
                   id={id}
                   value={str}
@@ -187,15 +189,15 @@ export const TemplateParamsFields = memo(function TemplateParamsFields({
                   onChange={(e) => setKey(f.key, e.target.value)}
                   autoComplete="off"
                   className={cn(
-                    "h-10 min-w-0 flex-1 border-0 border-b border-slate-200/90 bg-transparent px-0.5 pr-[4.25rem]",
-                    "rounded-none text-[15px] font-normal leading-10 shadow-none",
+                    "h-auto min-h-0 min-w-0 flex-1 border-0 border-b border-slate-200/90 bg-transparent px-0.5 py-0 pb-px",
+                    "rounded-none text-[15px] font-normal leading-5 shadow-none",
                     "placeholder:text-slate-400/70",
                     "focus-visible:border-b-[#0071e3] focus-visible:bg-transparent",
                     "focus-visible:ring-0 focus-visible:ring-offset-0"
                   )}
                 />
                 <span
-                  className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 select-none pl-1 text-[10px] tabular-nums text-slate-300"
+                  className="shrink-0 select-none text-[10px] font-normal leading-5 tabular-nums text-slate-300"
                   aria-hidden
                 >
                   {str.length} / {STRING_INPUT_MAX_LEN}

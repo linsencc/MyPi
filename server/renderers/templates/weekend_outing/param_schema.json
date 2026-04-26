@@ -13,14 +13,14 @@
     "type": "boolean",
     "required": true,
     "default": true,
-    "description": "根据天气和活动，多写一句白话建议（与每日寄语共用 MYPI_LLM_*）。"
+    "description": "根据上文活动生成一段安排类建议（与每日寄语共用 MYPI_LLM_*）；一般不重复天气/交通，仅在高风险或明显影响户外场次时点到为止。"
   },
   {
     "key": "manual_events_text",
-    "name": "我想去的活动（选填）",
+    "name": "我想去的活动",
     "type": "string",
     "required": false,
     "default": "",
-    "description": "自己写几条即可，用中文或英文分号隔开，会与联网检索结果一起显示。"
+    "description": "自己写几条即可，用中文或英文分号隔开，会与联网检索结果一起显示。单条可写「日期｜类型｜标题」或加第四段「日期｜类型｜标题｜地址」。"
   }
 ]

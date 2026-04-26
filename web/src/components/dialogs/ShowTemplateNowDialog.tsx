@@ -40,19 +40,19 @@ export function ShowTemplateNowDialog({
     return `立即上屏 — ${template.displayName || template.templateId}`
   }, [template])
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!template || busy) return
     const err = validateTemplateParamForm(template.paramSchema, params)
     if (err) {
       onNotify?.(err)
       return
     }
-    try {
-      await onSubmit(template.templateId, params)
-      onOpenChange(false)
-    } catch {
-      /* toast from caller */
-    }
+    const id = template.templateId
+    const payload = { ...params }
+    void Promise.resolve(onSubmit(id, payload)).catch(() => {
+      /* errors surfaced via runShowNowTemplate / showToast */
+    })
+    onOpenChange(false)
   }, [template, busy, onSubmit, onOpenChange, onNotify, params])
 
   return (
@@ -93,7 +93,7 @@ export function ShowTemplateNowDialog({
             type="button"
             disabled={busy || !template}
             className="h-8 min-h-8 rounded-md bg-[#0071e3] px-4 text-[13px] font-medium text-white shadow-sm hover:bg-[#0068cf] focus-visible:ring-2 focus-visible:ring-[#0071e3]/30 disabled:opacity-60"
-            onClick={() => void handleSubmit()}
+            onClick={handleSubmit}
           >
             {busy ? "上屏中…" : "上屏"}
           </Button>

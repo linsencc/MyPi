@@ -3,7 +3,7 @@
 可选环境变量：
 
 - ``MYPI_WEEKEND_HTML``：设为 ``0`` / ``false`` / ``off`` 时**仅**使用内置 PIL 卡片，不调用 Chromium。
-- ``MYPI_WEEKEND_CHROMIUM_TIMEOUT``：HTML 截图超时秒数（默认 ``90``）。
+- ``MYPI_WEEKEND_CHROMIUM_TIMEOUT``：HTML 截图超时秒数（默认 ``120``；Zero 2 W 上首次起 Chromium 可能较慢）。
 - ``MYPI_CHROMIUM_BIN``：Chromium 可执行文件路径（否则自动在 PATH 中查找）。
 - ``MYPI_WEEKEND_EVENTS_MODEL``：活动检索所用模型 id；不设置则与 ``MYPI_LLM_MODEL`` 相同。
 - 坐标与预报天数：``MYPI_OUTING_LAT`` / ``MYPI_OUTING_LON`` / ``MYPI_OUTING_FORECAST_DAYS`` / ``MYPI_OUTING_MAX_EVENTS``。
@@ -28,10 +28,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from renderers.template_base import RenderContext, WallTemplate
 from renderers.templates.ui_params import load_param_schema_json
 
-from . import card, events_grounding, llm_tip, weather
+from . import card, events_grounding, layout_events, llm_tip, weather
 from .params import WeekendOutingParams
 
 log = logging.getLogger(__name__)
+
+# 与静态稿 ``weekend-outing-shenzhen-1200x1600.html`` 设计画布一致
+_WALL_DESIGN_W = 1200
+_WALL_DESIGN_H = 1600
+_WALL_EVENTS_MAX = 6
 
 
 def _weekend_html_enabled() -> bool:
@@ -42,11 +47,11 @@ def _weekend_html_enabled() -> bool:
 
 
 def _chromium_timeout_s() -> float:
-    raw = os.environ.get("MYPI_WEEKEND_CHROMIUM_TIMEOUT", "90").strip()
+    raw = os.environ.get("MYPI_WEEKEND_CHROMIUM_TIMEOUT", "120").strip()
     try:
-        return max(15.0, float(raw))
+        return max(30.0, float(raw))
     except ValueError:
-        return 90.0
+        return 120.0
 
 
 class WeekendOutingTemplate(WallTemplate):
@@ -60,6 +65,14 @@ class WeekendOutingTemplate(WallTemplate):
         w = int(ctx.device_profile.get("width", 800))
         h = int(ctx.device_profile.get("height", 600))
 
+        tz_name = os.environ.get("MYPI_TZ", "Asia/Shanghai").strip() or "Asia/Shanghai"
+        try:
+            z = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            z = ZoneInfo("Asia/Shanghai")
+        now = datetime.now(z)
+        last_refresh = now.strftime("%Y-%m-%d %H:%M")
+
         def _load_weather() -> weather.WeatherDigest | None:
             return weather.fetch_weather_digest(
                 params.latitude,
@@ -68,8 +81,10 @@ class WeekendOutingTemplate(WallTemplate):
                 include_hourly_today=params.show_hourly_today,
             )
 
+        fetch_n = min(_WALL_EVENTS_MAX, max(1, params.max_events))
+
         def _load_events() -> list[str]:
-            return events_grounding.fetch_shenzhen_event_lines(max_lines=params.max_events)
+            return events_grounding.fetch_shenzhen_event_lines(max_lines=fetch_n)
 
         with ThreadPoolExecutor(max_workers=2) as ex:
             fut_w = ex.submit(_load_weather)
@@ -89,18 +104,60 @@ class WeekendOutingTemplate(WallTemplate):
                 event_lines.append(r)
             source_labels.append("手动")
 
-        event_lines = event_lines[: params.max_events]
+        event_lines = layout_events.filter_event_lines_in_recency_window(
+            event_lines,
+            now.date(),
+            window_days=layout_events.DEFAULT_EVENT_RECENCY_DAYS,
+        )
+        event_lines = layout_events.sort_event_lines_by_time(
+            event_lines, now=now, tz_name=tz_name
+        )
+        event_lines = event_lines[:_WALL_EVENTS_MAX]
+        event_rows = layout_events.rows_for_layout(event_lines)
 
         rule = weather.heuristic_tip(digest)
-        weather_stub = "；".join(digest.lines[1:4]) if digest and len(digest.lines) > 1 else ""
-        act_stub = " / ".join(event_lines[:4]) if event_lines else "无"
-        tip: str | None = None
-        if params.enable_llm_weekend_tip:
-            tip = llm_tip.weekend_tip_one_liner(weather_stub, act_stub)
-
         rule_display = (
             rule.replace("【提示】", "", 1).strip() if rule.startswith("【提示】") else rule
         )
+
+        weather_j = weather.digest_for_jinja(digest)
+        daily_rows = list(weather_j.get("daily_rows") or [])[:3]
+        weather_j["daily_rows"] = daily_rows
+        date_parts = [str(r.get("date") or "") for r in daily_rows if r.get("date")]
+        if len(date_parts) >= 2:
+            date_range_label = f"{date_parts[0]}–{date_parts[-1]}"
+        elif len(date_parts) == 1:
+            date_range_label = date_parts[0]
+        else:
+            date_range_label = ""
+        advice_sub = (
+            f"活动与安排 · {date_range_label} {params.area_label}".strip()
+            if date_range_label
+            else f"活动与安排 · {params.area_label}"
+        )
+
+        wx_risk = weather.weather_risk_context_for_llm(digest)
+        fb = llm_tip.advice_fallback_from_rule(
+            has_events=bool(event_lines),
+            risk_suffix=weather.weather_risk_one_liner(digest),
+        )
+        advice_lead = fb["lead"]
+        events_block = (
+            "\n".join(event_lines)
+            if event_lines
+            else "（当前无活动列表：请写 2～3 条与本地文化休闲相关的泛化建议，不要讨论天气、雨具、穿衣或交通方式，勿编造具体活动名。）"
+        )
+        if params.enable_llm_weekend_tip:
+            block = llm_tip.weekend_advice_block(
+                wx_risk,
+                events_block,
+                area_label=params.area_label,
+                date_range_label=date_range_label,
+            )
+            if block and (block.get("lead") or "").strip():
+                advice_lead = llm_tip.clamp_advice_lead(str(block["lead"]).strip())
+        advice_lead = llm_tip.clamp_advice_lead(advice_lead)
+        tip: str | None = advice_lead or None
 
         if _weekend_html_enabled():
             try:
@@ -120,32 +177,33 @@ class WeekendOutingTemplate(WallTemplate):
                 else:
                     empty_events = ""
 
-                tz_name = os.environ.get("MYPI_TZ", "Asia/Shanghai").strip() or "Asia/Shanghai"
-                try:
-                    z = ZoneInfo(tz_name)
-                except ZoneInfoNotFoundError:
-                    z = ZoneInfo("Asia/Shanghai")
-                last_refresh = datetime.now(z).strftime("%Y-%m-%d %H:%M")
-
                 src = "、".join(dict.fromkeys(source_labels)) if source_labels else "无"
                 footer_line = (
                     f"{cn_date_str()}　·　活动：{src}　·　更新 {last_refresh}　·　仅供参考　·　天气 Open-Meteo"
                 )
 
-                subtitle = f"{params.area_label} · 出行简报"
+                sc = min(w / _WALL_DESIGN_W, h / _WALL_DESIGN_H)
+                off_x = (w - _WALL_DESIGN_W * sc) / 2.0
+                off_y = (h - _WALL_DESIGN_H * sc) / 2.0
+
                 html = jinja_env.render_weekend_layout_html(
                     {
                         "width": w,
                         "height": h,
+                        "frame_scale": sc,
+                        "frame_off_x": off_x,
+                        "frame_off_y": off_y,
                         "title": "周末出行",
-                        "subtitle": subtitle,
                         "area_label": params.area_label,
-                        "weather": weather.digest_for_jinja(digest),
+                        "weather": weather_j,
                         "event_lines": event_lines,
+                        "event_rows": event_rows,
                         "empty_events_text": empty_events,
                         "rule": rule_display,
                         "llm_tip": tip or "",
                         "footer_line": footer_line,
+                        "advice_lead": advice_lead,
+                        "advice_sub": advice_sub,
                     }
                 )
                 img = html_chromium.render_html_to_image(

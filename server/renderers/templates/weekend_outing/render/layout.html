@@ -8,89 +8,116 @@
 {% if font_face_css %}
 {{ font_face_css|safe }}
 {% endif %}
+{% if bootstrap_icons_css %}
+{{ bootstrap_icons_css|safe }}
+{% endif %}
 {{ embedded_css|safe }}
   </style>
 </head>
 <body>
-  <div class="page" style="width:{{ width }}px; min-height:{{ height }}px;">
-    <header class="hero">
-      <h1>{{ title }}</h1>
-      <p class="sub">{{ subtitle }}</p>
-      <div class="accent-bar" aria-hidden="true"></div>
-    </header>
+  <div class="viewport" style="width:{{ width }}px;height:{{ height }}px;">
+    <div class="scaled-root" style="left:{{ frame_off_x }}px;top:{{ frame_off_y }}px;transform:scale({{ frame_scale }});transform-origin:0 0;">
+      <article class="canvas" aria-label="{{ area_label }}{{ title }}信息图 {{ width }}×{{ height }}">
+        <main class="inner">
+          <header>
+            <h1>{{ title }}</h1>
+          </header>
 
-    <section class="panel panel-weather">
-      <h2><span class="h2-icon" aria-hidden="true">▸</span>天气 · {{ area_label }}</h2>
-      <div class="body">
-        {% if weather.has_weather %}
-          {% if weather.daily_rows and weather.daily_rows|length > 0 %}
-            <div class="weather-strip">
-            {% for row in weather.daily_rows %}
-            <article class="weather-day">
-              {% if row.icon_src %}
-              <img
-                class="wmo-icon"
-                src="{{ row.icon_src }}"
-                alt="{{ row.desc }}"
-                width="64"
-                height="64"
-                loading="eager"
-                decoding="async"
-              />
-              {% else %}
-              <div class="wmo-icon wmo-icon-fallback" role="img" aria-label="{{ row.desc }}">{{ row.desc[:1] }}</div>
+          <section class="section" aria-labelledby="w">
+            <div class="section-head">
+              <span class="section-num" aria-hidden="true">01</span>
+              <h2 class="section-title" id="w">天气</h2>
+              <span class="section-sub">{{ area_label }}</span>
+            </div>
+            {% if weather.has_weather %}
+              {% if weather.daily_rows and weather.daily_rows|length > 0 %}
+              <div class="weather-bento">
+                <div class="weather-bento__sky" aria-hidden="true"></div>
+                <div class="weather-row" role="list">
+                  {% for row in weather.daily_rows %}
+                  <div class="weather-card{% if row.rain_pct|int >= 58 %} heavy{% endif %}" role="listitem" data-weather="{{ row.data_weather }}">
+                    <div class="weather-date-group">
+                      <span class="date">{{ row.date }}</span>
+                      {% if row.weekday %}
+                      <span class="weather-date-dot" aria-hidden="true">·</span>
+                      <span class="weather-weekday">{{ row.weekday }}</span>
+                      {% endif %}
+                    </div>
+                    <div class="weather-card__main">
+                      <p class="weather-label">{{ row.desc }}</p>
+                      <p class="weather-temp">{{ row.tmin | round(1) }} – {{ row.tmax | round(1) }} °C</p>
+                    </div>
+                    <div class="precip-track"><div class="precip-fill" style="width: {{ row.rain_pct|int }}%"></div></div>
+                    <div class="precip-label">降水 <b>{{ row.rain_pct }}%</b></div>
+                    <div class="weather-icon" aria-hidden="true">
+                      <i class="{{ row.bi_class }}"></i>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% elif weather.daily_lines %}
+              <div class="summary-box summary-box--fallback">
+                {% for line in weather.daily_lines %}
+                <p class="wx-fallback-line">{{ line }}</p>
+                {% endfor %}
+              </div>
               {% endif %}
-              <div class="wd-date">{{ row.date }}</div>
-              <div class="wd-desc">{{ row.desc }}</div>
-              <div class="wd-temp">{{ row.tmin | round(1) }}～{{ row.tmax | round(1) }}℃</div>
-              <div class="wd-rain">雨 {{ row.rain_pct }}%</div>
-            </article>
-            {% endfor %}
-          </div>
-          {% elif weather.daily_lines %}
-          <div class="weather-fallback weather-rows">
-            {% for line in weather.daily_lines %}
-            <div>{{ line }}</div>
-            {% endfor %}
-          </div>
-          {% endif %}
-          {% if weather.hourly_line %}
-          <div class="hourly-strip">{{ weather.hourly_line }}</div>
-          {% endif %}
-        {% else %}
-          <p class="muted">（天气暂不可用，请检查网络）</p>
-        {% endif %}
-      </div>
-    </section>
+              {% if weather.hourly_line %}
+              <p class="wx-hourly-line">{{ weather.hourly_line }}</p>
+              {% endif %}
+            {% else %}
+              <p class="sheet-muted">（天气暂不可用，请检查网络）</p>
+            {% endif %}
+          </section>
 
-    <section class="panel panel-events">
-      <h2><span class="h2-icon" aria-hidden="true">●</span>近期活动</h2>
-      <div class="body {% if not event_lines %}muted{% endif %}">
-        {% if event_lines %}
-        <ol class="events">
-          {% for e in event_lines %}
-          <li><span class="ev-num">{{ loop.index }}</span><span class="ev-text">{{ e }}</span></li>
-          {% endfor %}
-        </ol>
-        {% else %}
-        <p class="empty-hint">{{ empty_events_text }}</p>
-        {% endif %}
-      </div>
-    </section>
+          <section class="section section--events" aria-labelledby="e">
+            <div class="section-head">
+              <span class="section-num" aria-hidden="true">02</span>
+              <h2 class="section-title" id="e">活动</h2>
+              <span class="section-sub">按日期排序</span>
+            </div>
+            {% if event_rows %}
+            <div class="events-grid" role="list">
+              {% for row in event_rows %}
+              {% set cat_key = row.event_kind | replace('event--', '') %}
+              <div class="event {{ row.event_kind }}" role="listitem">
+                <span class="event-idx">{{ '%02d'|format(loop.index) }}</span>
+                <div class="event-main">
+                  <div class="event-meta">
+                    <p class="event-when">{{ row.when_disp }}</p>
+                    {% if row.category %}
+                    <div class="event-tags">
+                      <span class="tag cat cat-{{ cat_key }}">{{ row.category }}</span>
+                    </div>
+                    {% endif %}
+                  </div>
+                  <p class="event-title">{{ row.title }}</p>
+                  <p class="event-addr">{{ row.addr_disp }}</p>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <p class="sheet-muted">{{ empty_events_text }}</p>
+            {% endif %}
+          </section>
 
-    <section class="panel panel-tips">
-      <h2><span class="h2-icon h2-icon-tip" aria-hidden="true">※</span>出行提示</h2>
-      <div class="body tips-body">
-        <p class="rule-line">{{ rule }}</p>
-        {% if llm_tip %}
-        <p class="tip-line"><span class="tip-label">小结</span>{{ llm_tip }}</p>
-        {% endif %}
-      </div>
-    </section>
+          <section class="section section--advice" aria-labelledby="advice-title">
+            <div class="section-head">
+              <span class="section-num" aria-hidden="true">03</span>
+              <h2 class="section-title" id="advice-title">建议</h2>
+              <span class="section-sub">{{ advice_sub }}</span>
+            </div>
+            <div class="summary-box summary-box--section">
+              <p class="summary-box__lead">{{ advice_lead }}</p>
+            </div>
+          </section>
 
-    <footer class="footer">
-      <span class="footer-inner">{{ footer_line }}</span>
-    </footer>
+          <p class="foot">{{ footer_line }}</p>
+        </main>
+      </article>
+    </div>
   </div>
 </body>
 </html>

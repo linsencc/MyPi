@@ -97,6 +97,8 @@ def render_html_to_image(
             "--mute-audio",
             "--no-sandbox",
             "--disable-extensions",
+            # 避免 file:// 页面仍去拉外网子资源时在弱网/离线设备上卡死直至超时
+            "--disable-background-networking",
         ]
         # Older chromium may not support --headless=new; try without if needed in future.
 
