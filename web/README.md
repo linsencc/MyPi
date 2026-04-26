@@ -1,6 +1,6 @@
 # MyPi Web（正式控制台）
 
-对接本仓库 [server](../server) 的 `GET/PUT /api/v1/*`，无本地 mock 场景数据。界面与交互参考 `demo/`，但 **`demo/` 不参与构建**，请勿从本包引用 `demo` 路径。
+对接本仓库 [server](../server) 的 `GET/PUT /api/v1/*`，无本地 mock 场景数据。
 
 ## 开发
 

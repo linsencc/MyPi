@@ -107,7 +107,6 @@ MyPi/
 │   ├── renderers/        # 画面模板系统与自定义模板实现
 │   └── storage/          # 配置与状态的本地持久化
 ├── web/                  # 官方 Web 控制台 (React SPA)
-├── demo/                 # 画框演示与实验控制台
 └── .cursor/              # 编辑器规则与 Agent 技能指令
 ```
 

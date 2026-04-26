@@ -2,7 +2,7 @@
 name: mypi-browser-regression
 description: >-
   Requires Cursor IDE browser regression and running through @test test cases after substantive changes in the MyPi
-  repo. Use for any agent edit touching web/, server/, or demo/; before
+  repo. Use for any agent edit touching web/ or server/; before
   marking work complete, sign-off, or “交付”; whenever the user asks for
   regression or 回测. Complements mypi-browser-verify (how) with a default-on
   project policy (when).
@@ -24,13 +24,12 @@ description: >-
 
 - 修改了 **`web/`**（任意文件）。
 - 修改了 **`server/`**（任意文件：API、编排、模板、配置读写、静态路由等——只要可能影响控制台或 `/api` 行为）。
-- 修改了 **`demo/`** 且本次任务与联调、演示或「和 web 行为对齐」有关。
 
 回测时应覆盖**与改动点相关的**关键路径（例如：首页加载、场景编辑、立即上墙、预览图、Network 中关键 `GET/POST` 为 200 等），具体操作步骤见同仓库 `.cursor/skills/mypi-browser-verify/SKILL.md`。
 
 ## 可豁免（不做浏览器回测）
 
-- 仅改 **纯文档**（如根目录说明、与运行无关的注释），且**不**改 `web/` / `server/` / `demo/` 下可执行代码或配置结构。
+- 仅改 **纯文档**（如根目录说明、与运行无关的注释），且**不**改 `web/` / `server/` 下可执行代码或配置结构。
 - 仅改 **`.cursor/`** 规则或技能文本本身（本 skill 除外：若改了浏览器相关 skill，应用浏览器自洽验证可选）。
 - 用户**明确**声明本次任务只需脚本/单测、不要求浏览器。
 
