@@ -50,7 +50,7 @@ export const TemplateCard = memo(function TemplateCard({
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="min-h-0 min-w-0 cursor-default">
-              <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[13px]">
+              <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[14px]">
                 {title}
               </h3>
             </div>

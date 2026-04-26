@@ -1,0 +1,270 @@
+/* 周末出行 HTML — 参考 InkyPi 式分区 + Open-Meteo + OWM CDN 天气图标 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  font-family: "MyPiWeekend", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(165deg, #e4ecf9 0%, #f5f0e8 48%, #eef3fb 100%);
+  color: #151b28;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  width: 100%;
+  min-height: 100%;
+  padding: 2.8% 4% 2.4%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* —— Hero —— */
+.hero {
+  background: linear-gradient(180deg, #ffffff 0%, #faf8ff 100%);
+  border: 1px solid #c5d0e8;
+  border-radius: 16px;
+  padding: 2.4% 3.5% 2.8%;
+  margin-bottom: 2%;
+  text-align: center;
+  box-shadow: 0 3px 0 rgba(180, 190, 210, 0.35);
+}
+
+.hero h1 {
+  font-size: clamp(24px, 4.2vw, 38px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #0f1420;
+}
+
+.hero .sub {
+  margin-top: 0.4em;
+  font-size: clamp(13px, 2vw, 17px);
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.accent-bar {
+  width: 46%;
+  max-width: 240px;
+  height: 5px;
+  margin: 1em auto 0;
+  background: linear-gradient(90deg, #2a4ea8, #5a7fd4);
+  border-radius: 4px;
+}
+
+/* —— Panels —— */
+.panel {
+  background: #fbfcff;
+  border: 1px solid #b8c6e0;
+  border-radius: 14px;
+  padding: 2% 3% 2.4%;
+  margin-bottom: 1.6%;
+  box-shadow: 3px 4px 0 rgba(190, 198, 218, 0.45);
+  flex: 0 0 auto;
+}
+
+.panel h2 {
+  font-size: clamp(15px, 2.35vw, 19px);
+  color: #1e3a8a;
+  margin-bottom: 0.75em;
+  padding: 0.15em 0 0.15em 0.5em;
+  border-left: 6px solid #3757b8;
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  font-weight: 700;
+}
+
+.h2-icon {
+  color: #3757b8;
+  font-size: 0.95em;
+  line-height: 1;
+  min-width: 1em;
+  text-align: center;
+}
+
+.h2-icon-tip {
+  font-size: 1.05em;
+}
+
+.panel .body {
+  font-size: clamp(12px, 1.9vw, 16px);
+  line-height: 1.58;
+  color: #222831;
+}
+
+.panel .body.muted {
+  color: #3d4a5c;
+}
+
+.muted {
+  color: #5a6578;
+}
+
+/* —— Weather strip (InkyPi-style icons) —— */
+.weather-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 2.5% 1.5%;
+}
+
+.weather-day {
+  flex: 1 1 28%;
+  min-width: 140px;
+  max-width: 32%;
+  text-align: center;
+  padding: 0.65em 0.5em 0.85em;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7fd 100%);
+  border: 1px solid #d0d8ea;
+  border-radius: 12px;
+}
+
+.wmo-icon {
+  display: block;
+  margin: 0 auto 0.35em;
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.wmo-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.35em;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #eef3fc, #e0e9f8);
+  border: 1px solid #c5d0e8;
+  font-size: 26px;
+  font-weight: 800;
+  color: #2a4ea8;
+}
+
+.wd-date {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: #1a2744;
+  margin-bottom: 0.15em;
+}
+
+.wd-desc {
+  font-size: 0.92em;
+  color: #3d4f6f;
+  margin-bottom: 0.35em;
+}
+
+.wd-temp {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 0.98em;
+  letter-spacing: 0.02em;
+}
+
+.wd-rain {
+  margin-top: 0.25em;
+  font-size: 0.88em;
+  color: #4a6fa8;
+}
+
+.hourly-strip {
+  margin-top: 1em;
+  padding: 0.65em 0.75em;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: #3d4f6f;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px dashed #c5d0e8;
+  border-radius: 10px;
+}
+
+.weather-fallback.weather-rows {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* —— Events —— */
+ol.events {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: ev;
+}
+
+ol.events li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  margin-bottom: 0.55em;
+  padding: 0.5em 0.65em;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #dce3f0;
+  border-radius: 10px;
+  border-left: 4px solid #3757b8;
+}
+
+.ev-num {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  font-weight: 800;
+  color: #3757b8;
+  font-size: 0.95em;
+}
+
+.ev-text {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+.empty-hint {
+  line-height: 1.55;
+}
+
+/* —— Tips —— */
+.tips-body .rule-line {
+  color: #2d3748;
+  margin-bottom: 0.5em;
+}
+
+.tip-line {
+  margin-top: 0.45em;
+  padding-top: 0.55em;
+  border-top: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.tip-label {
+  display: inline-block;
+  margin-right: 0.35em;
+  padding: 0.08em 0.45em;
+  font-size: 0.88em;
+  font-weight: 700;
+  color: #1e3a8a;
+  background: #e8eef9;
+  border-radius: 4px;
+}
+
+/* —— Footer —— */
+.footer {
+  margin-top: auto;
+  padding-top: 1.4%;
+  font-size: clamp(10px, 1.55vw, 12px);
+  color: #5c6474;
+  border-top: 1px solid #cdd5e6;
+}
+
+.footer-inner {
+  display: block;
+  line-height: 1.45;
+  word-break: break-all;
+}

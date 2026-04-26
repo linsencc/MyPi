@@ -1,0 +1,26 @@
+[
+  {
+    "key": "show_hourly_today",
+    "name": "今日逐时天气",
+    "type": "boolean",
+    "required": true,
+    "default": false,
+    "description": "开启后多一行「今天每隔几小时」简况；关则只看未来几天白天概况。"
+  },
+  {
+    "key": "enable_llm_weekend_tip",
+    "name": "加一句出行小结",
+    "type": "boolean",
+    "required": true,
+    "default": true,
+    "description": "根据天气和活动，多写一句白话建议（与每日寄语共用 MYPI_LLM_*）。"
+  },
+  {
+    "key": "manual_events_text",
+    "name": "我想去的活动（选填）",
+    "type": "string",
+    "required": false,
+    "default": "",
+    "description": "自己写几条即可，用中文或英文分号隔开，会与联网检索结果一起显示。"
+  }
+]
